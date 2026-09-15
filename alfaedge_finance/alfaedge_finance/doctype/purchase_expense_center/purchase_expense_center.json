@@ -37,6 +37,13 @@
   "section_break_totals",
   "extracted_taxable_amount",
   "extracted_grand_total",
+  "section_break_tds",
+  "is_tds_applicable",
+  "tds_category",
+  "column_break_tds",
+  "tds_rate",
+  "tds_account",
+  "tds_amount",
   "section_break_invoice",
   "purchase_invoice"
  ],
@@ -228,6 +235,49 @@
    "fieldname": "extracted_grand_total",
    "fieldtype": "Currency",
    "label": "Extracted Grand Total"
+  },
+  {
+   "fieldname": "section_break_tds",
+   "fieldtype": "Section Break",
+   "label": "TDS"
+  },
+  {
+   "default": "0",
+   "description": "Auto-set when the invoice itself states a TDS deduction; otherwise pick a TDS Category below to apply it manually.",
+   "fieldname": "is_tds_applicable",
+   "fieldtype": "Check",
+   "label": "TDS Applicable"
+  },
+  {
+   "depends_on": "eval:doc.is_tds_applicable",
+   "fieldname": "tds_category",
+   "fieldtype": "Link",
+   "label": "TDS Category",
+   "options": "TDS Category"
+  },
+  {
+   "fieldname": "column_break_tds",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.is_tds_applicable",
+   "fieldname": "tds_rate",
+   "fieldtype": "Percent",
+   "label": "TDS Rate"
+  },
+  {
+   "depends_on": "eval:doc.is_tds_applicable",
+   "fieldname": "tds_account",
+   "fieldtype": "Link",
+   "label": "TDS Account",
+   "options": "Account"
+  },
+  {
+   "depends_on": "eval:doc.is_tds_applicable",
+   "description": "Deducted from the amount payable to the supplier and posted to the TDS Account above as a liability. Calculated on the extracted taxable amount, not the GST-inclusive total.",
+   "fieldname": "tds_amount",
+   "fieldtype": "Currency",
+   "label": "TDS Amount"
   },
   {
    "fieldname": "section_break_invoice",

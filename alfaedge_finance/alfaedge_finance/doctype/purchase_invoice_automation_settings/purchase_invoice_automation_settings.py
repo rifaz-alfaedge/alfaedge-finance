@@ -12,6 +12,7 @@ def get_settings():
 	return {
 		"company": settings.company,
 		"default_uom": settings.default_uom,
+		"default_tds_account": settings.default_tds_account,
 		"bifrost_endpoint": settings.bifrost_endpoint,
 		"bifrost_model": settings.bifrost_model,
 		"bifrost_virtual_key": settings.get_password("bifrost_virtual_key", raise_exception=False)

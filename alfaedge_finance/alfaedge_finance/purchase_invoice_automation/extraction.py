@@ -29,7 +29,9 @@ Return ONLY a valid JSON object with these exact keys - no markdown, no commenta
     { "tax_type": "CGST", "rate": 9, "amount": 0.0 }
   ],
   "taxable_amount": 0.0,
-  "grand_total": 0.0
+  "grand_total": 0.0,
+  "tds_rate": null,
+  "tds_amount": null
 }
 
 Use null for missing strings and 0 for missing numbers.
@@ -40,6 +42,10 @@ If no GSTIN is visible on the invoice, use null for gst_number - do not guess.
 "grand_total" is the final total as printed on the invoice (items + all taxes).
 Do not invent tax rows if none are printed on the invoice (e.g. reverse-charge or
 tax-exempt invoices) - an empty taxes array is a valid and expected result.
+"tds_rate" and "tds_amount" are only for a TDS (tax deducted at source) deduction that
+is explicitly printed on the invoice itself (e.g. a line saying "Less: TDS @ 2%" or
+similar). Use null for both if the invoice does not mention TDS - do not guess or
+calculate a TDS figure that isn't printed.
 """
 
 

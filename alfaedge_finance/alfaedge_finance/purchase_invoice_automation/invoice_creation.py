@@ -29,6 +29,8 @@ def _validate_mappings(expense_center):
 		errors.append(
 			_("Tax row(s) {0} are missing a Mapped Account.").format(", ".join(map(str, missing_taxes)))
 		)
+	if expense_center.is_tds_applicable and not (expense_center.tds_account and expense_center.tds_amount):
+		errors.append(_("TDS is marked applicable but is missing a TDS Account or TDS Amount."))
 	if errors:
 		frappe.throw("<br>".join(errors), title=_("Mapping Incomplete"))
 
@@ -100,16 +102,39 @@ def create_purchase_invoice_from_expense_center(expense_center_name: str) -> dic
 			},
 		)
 
+	if expense_center.is_tds_applicable:
+		# Mirrors erpnext's own automatic TDS row shape
+		# (tax_withholding_category.get_tax_row_for_tds): a fixed amount deducted from
+		# the amount payable, not a GST account, so india_compliance's per-item GST
+		# breakup requirement (see the comment above) doesn't apply to this row.
+		pi.append(
+			"taxes",
+			{
+				"charge_type": "Actual",
+				"category": "Total",
+				"add_deduct_tax": "Deduct",
+				"account_head": expense_center.tds_account,
+				"tax_amount": expense_center.tds_amount,
+				"description": f"TDS ({expense_center.tds_category or ''}) @ {expense_center.tds_rate}%".strip(),
+			},
+		)
+
 	pi.insert(ignore_permissions=True)
 
 	warning = None
 	if expense_center.extracted_grand_total:
-		diff = abs(pi.grand_total - expense_center.extracted_grand_total)
+		# extracted_grand_total is the invoice's own printed total, before any TDS
+		# deduction (TDS is withheld at payment time, it isn't part of what the
+		# supplier billed) - add back what TDS subtracted so the comparison is
+		# apples-to-apples.
+		tds_deducted = expense_center.tds_amount or 0 if expense_center.is_tds_applicable else 0
+		comparable_total = pi.grand_total + tds_deducted
+		diff = abs(comparable_total - expense_center.extracted_grand_total)
 		if diff > GRAND_TOTAL_TOLERANCE:
 			warning = _(
 				"Calculated grand total ({0}) differs from the invoice's extracted grand total "
 				"({1}) by more than {2} - please double-check items and taxes before submitting."
-			).format(pi.grand_total, expense_center.extracted_grand_total, GRAND_TOTAL_TOLERANCE)
+			).format(comparable_total, expense_center.extracted_grand_total, GRAND_TOTAL_TOLERANCE)
 
 	expense_center.purchase_invoice = pi.name
 	expense_center.invoice_status = "Invoice Created"

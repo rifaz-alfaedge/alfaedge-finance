@@ -10,6 +10,7 @@ TEST_ITEM = "PIA Test Item"
 TEST_CGST_ACCOUNT = "Input Tax CGST - CDS"
 TEST_SGST_ACCOUNT = "Input Tax SGST - CDS"
 TEST_GSTIN = "32AABCU9603R1ZW"  # same state (32/Kerala) as the test Company, so CGST+SGST is valid
+TEST_TDS_ACCOUNT = "TDS Payable - CDS"
 
 
 class TestInvoiceCreation(FrappeTestCase):
@@ -47,6 +48,16 @@ class TestInvoiceCreation(FrappeTestCase):
 		settings.company = COMPANY
 		settings.default_uom = "Nos"
 		settings.save(ignore_permissions=True)
+
+		if not frappe.db.exists("TDS Category", "TEST-194J"):
+			frappe.get_doc(
+				{
+					"doctype": "TDS Category",
+					"category_name": "TEST-194J",
+					"rate": 2,
+					"account": TEST_TDS_ACCOUNT,
+				}
+			).insert(ignore_permissions=True)
 
 	def _make_expense_center(self, with_tax=True):
 		doc = frappe.get_doc(
@@ -133,3 +144,35 @@ class TestInvoiceCreation(FrappeTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			create_purchase_invoice_from_expense_center(doc.name)
+
+	def test_blocks_when_tds_applicable_but_unmapped(self):
+		doc = self._make_expense_center(with_tax=False)
+		doc.is_tds_applicable = 1
+		doc.tds_rate = 2
+		doc.save(ignore_permissions=True)  # no tds_account, no tds_amount
+
+		with self.assertRaises(frappe.ValidationError):
+			create_purchase_invoice_from_expense_center(doc.name)
+
+	def test_creates_invoice_with_tds_deduction(self):
+		doc = self._make_expense_center(with_tax=False)
+		doc.is_tds_applicable = 1
+		doc.tds_category = "TEST-194J"
+		doc.tds_rate = 2
+		doc.tds_account = TEST_TDS_ACCOUNT
+		doc.tds_amount = 2  # 2% of the 100 taxable amount
+		doc.extracted_grand_total = 100  # invoice's own printed total, before TDS
+		doc.save(ignore_permissions=True)
+
+		result = create_purchase_invoice_from_expense_center(doc.name)
+
+		pi = frappe.get_doc("Purchase Invoice", result["purchase_invoice"])
+		tds_rows = [row for row in pi.taxes if row.account_head == TEST_TDS_ACCOUNT]
+		self.assertEqual(len(tds_rows), 1)
+		self.assertEqual(tds_rows[0].charge_type, "Actual")
+		self.assertEqual(tds_rows[0].add_deduct_tax, "Deduct")
+		self.assertEqual(tds_rows[0].tax_amount, 2)
+		self.assertEqual(pi.grand_total, 98)  # 100 - 2% TDS
+		# extracted_grand_total (100) is pre-TDS, so this must not warn despite
+		# pi.grand_total (98) differing from it by more than the ₹1 tolerance.
+		self.assertIsNone(result["warning"])

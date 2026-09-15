@@ -47,4 +47,22 @@ frappe.ui.form.on("Purchase Expense Center", {
 			);
 		}
 	},
+
+	tds_category(frm) {
+		if (!frm.doc.tds_category) return;
+
+		frappe.db.get_doc("TDS Category", frm.doc.tds_category).then((category) => {
+			frm.set_value("is_tds_applicable", 1);
+			frm.set_value("tds_rate", category.rate);
+			if (!frm.doc.tds_account) {
+				frm.set_value("tds_account", category.account);
+			}
+			if (frm.doc.extracted_taxable_amount) {
+				frm.set_value(
+					"tds_amount",
+					flt((frm.doc.extracted_taxable_amount * category.rate) / 100, precision("tds_amount", frm.doc))
+				);
+			}
+		});
+	},
 });

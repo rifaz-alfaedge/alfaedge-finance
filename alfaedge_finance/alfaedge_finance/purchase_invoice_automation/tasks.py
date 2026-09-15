@@ -164,6 +164,16 @@ def _apply_extraction(doc, parsed: dict):
 	doc.extracted_taxable_amount = float(parsed.get("taxable_amount") or 0) or None
 	doc.extracted_grand_total = float(parsed.get("grand_total") or 0) or None
 
+	tds_rate = parsed.get("tds_rate")
+	tds_amount = parsed.get("tds_amount")
+	if tds_rate or tds_amount:
+		doc.is_tds_applicable = 1
+		doc.tds_rate = float(tds_rate or 0) or None
+		doc.tds_amount = float(tds_amount or 0) or None
+		doc.tds_account = settings["default_tds_account"]
+	# else: leave TDS fields untouched - the reviewer picks a TDS Category by hand
+	# when the invoice itself doesn't state a deduction (most invoices, per design).
+
 
 def _flag_duplicates(doc):
 	"""Same supplier + same supplier_invoice_number arriving twice: flag, don't block."""
