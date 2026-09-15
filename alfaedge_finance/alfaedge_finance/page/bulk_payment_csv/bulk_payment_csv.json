@@ -1,0 +1,13 @@
+{
+ "doctype": "Page",
+ "module": "Alfaedge Finance",
+ "name": "bulk-payment-csv",
+ "page_name": "bulk-payment-csv",
+ "title": "Bulk Payment CSV",
+ "standard": "Yes",
+ "system_page": 0,
+ "roles": [
+  {"role": "Accounts Manager"},
+  {"role": "System Manager"}
+ ]
+}
