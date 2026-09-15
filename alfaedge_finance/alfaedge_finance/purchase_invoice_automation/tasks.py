@@ -120,6 +120,11 @@ def _apply_extraction(doc, parsed: dict):
 		rate = float(item.get("rate") or 0)
 		amount = float(item.get("amount") or (qty * rate))
 
+		if amount == 0:
+			# Zero-amount lines show up as free samples, informational notes, or
+			# extraction noise - they don't need a mapping or a place on the invoice.
+			continue
+
 		full_text = item.get("item_name") or ""
 		truncated = full_text[:ITEM_NAME_MAX_LENGTH]
 		mapped_item = frappe.db.get_value(
