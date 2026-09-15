@@ -33,5 +33,6 @@ def retry_extraction(expense_center):
 		queue="long",
 		timeout=180,
 		expense_center=doc.name,
+		enqueue_after_commit=True,
 	)
 	return {"queued": True}

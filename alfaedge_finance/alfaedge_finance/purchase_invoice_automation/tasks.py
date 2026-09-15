@@ -59,6 +59,10 @@ def intake_pdf(
 		queue="long",
 		timeout=180,
 		expense_center=doc.name,
+		# Without this, a fast worker can start the job before this request's
+		# transaction commits, so the job's frappe.get_doc() finds nothing yet
+		# (seen in practice with multi-file uploads in the same request).
+		enqueue_after_commit=True,
 	)
 	return doc.name
 
