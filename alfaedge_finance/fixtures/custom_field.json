@@ -1,0 +1,16 @@
+[
+ {
+  "allow_on_submit": 1,
+  "collapsible": 0,
+  "columns": 0,
+  "description": "Internal Item this supplier line item description maps to. Populated automatically from Purchase Item Mapping where a match exists, and validated before a draft Purchase Invoice can be created from a Purchase Expense Center.",
+  "doctype": "Custom Field",
+  "dt": "Purchase Invoice Item",
+  "fieldname": "mapped_item",
+  "fieldtype": "Link",
+  "insert_after": "item_name",
+  "label": "Mapped Item",
+  "options": "Item",
+  "name": "Purchase Invoice Item-mapped_item"
+ }
+]

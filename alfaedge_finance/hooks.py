@@ -44,7 +44,7 @@ app_license = "mit"
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
-# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+doctype_list_js = {"Purchase Expense Center": "public/js/purchase_expense_center_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
@@ -241,4 +241,13 @@ app_license = "mit"
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
+
+# Fixtures
+# --------
+# Custom Field: Purchase Invoice Item.mapped_item, used by the purchase invoice
+# automation feature to link a supplier's line-item text to an internal Item.
+
+fixtures = [
+	{"doctype": "Custom Field", "filters": [["name", "=", "Purchase Invoice Item-mapped_item"]]},
+]
 

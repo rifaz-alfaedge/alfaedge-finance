@@ -1,0 +1,54 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-09-15 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "tax_type",
+  "rate",
+  "amount",
+  "mapped_account"
+ ],
+ "fields": [
+  {
+   "fieldname": "tax_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Tax Type",
+   "reqd": 1
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Percent",
+   "in_list_view": 1,
+   "label": "Rate"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount"
+  },
+  {
+   "fieldname": "mapped_account",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Mapped Account",
+   "options": "Account"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-15 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alfaedge Finance",
+ "name": "Purchase Expense Center Tax",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

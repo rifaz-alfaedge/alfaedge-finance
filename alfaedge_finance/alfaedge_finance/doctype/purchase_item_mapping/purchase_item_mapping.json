@@ -1,0 +1,57 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-09-15 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "supplier_item_description",
+  "mapped_item"
+ ],
+ "fields": [
+  {
+   "description": "Exact (truncated to 140 chars) line-item text as extracted from supplier invoices. Mapping is global, not per-supplier.",
+   "fieldname": "supplier_item_description",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Supplier Item Description",
+   "length": 140,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "mapped_item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Mapped Item",
+   "options": "Item",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-15 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alfaedge Finance",
+ "name": "Purchase Item Mapping",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

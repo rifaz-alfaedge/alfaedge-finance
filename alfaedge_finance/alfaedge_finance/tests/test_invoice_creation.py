@@ -1,0 +1,135 @@
+import frappe
+from frappe.tests.utils import FrappeTestCase
+
+from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.invoice_creation import (
+	create_purchase_invoice_from_expense_center,
+)
+
+COMPANY = "Code Dynamic Solutions Private Limited"
+TEST_ITEM = "PIA Test Item"
+TEST_CGST_ACCOUNT = "Input Tax CGST - CDS"
+TEST_SGST_ACCOUNT = "Input Tax SGST - CDS"
+TEST_GSTIN = "32AABCU9603R1ZW"  # same state (32/Kerala) as the test Company, so CGST+SGST is valid
+
+
+class TestInvoiceCreation(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+
+		if not frappe.db.exists("Item", TEST_ITEM):
+			frappe.get_doc(
+				{
+					"doctype": "Item",
+					"item_code": TEST_ITEM,
+					"item_name": TEST_ITEM,
+					"item_group": "All Item Groups",
+					"stock_uom": "Nos",
+					"is_stock_item": 0,
+					"gst_hsn_code": "998719",
+				}
+			).insert(ignore_permissions=True)
+
+		if not frappe.db.exists("Supplier", {"gstin": TEST_GSTIN}):
+			cls.supplier = frappe.get_doc(
+				{
+					"doctype": "Supplier",
+					"supplier_name": "PIA Invoice Test Supplier",
+					"supplier_group": "All Supplier Groups",
+					"supplier_type": "Company",
+					"gstin": TEST_GSTIN,
+				}
+			).insert(ignore_permissions=True)
+		else:
+			cls.supplier = frappe.get_doc("Supplier", {"gstin": TEST_GSTIN})
+
+		settings = frappe.get_single("Purchase Invoice Automation Settings")
+		settings.company = COMPANY
+		settings.default_uom = "Nos"
+		settings.save(ignore_permissions=True)
+
+	def _make_expense_center(self, with_tax=True):
+		doc = frappe.get_doc(
+			{
+				"doctype": "Purchase Expense Center",
+				"source": "Manual Upload",
+				"status": "Extracted",
+				"supplier_type": "Existing",
+				"existing_supplier": self.supplier.name,
+				"supplier_gst": TEST_GSTIN,
+				"supplier_invoice_number": frappe.generate_hash(length=8),
+				"extracted_grand_total": 118 if with_tax else 100,
+			}
+		)
+		doc.append(
+			"items",
+			{
+				"item_name": "Widget",
+				"description": "Widget",
+				"qty": 1,
+				"rate": 100,
+				"amount": 100,
+				"uom": "Nos",
+				"stock_qty": 1,
+				"base_rate": 100,
+				"base_amount": 100,
+				"mapped_item": TEST_ITEM,
+			},
+		)
+		if with_tax:
+			doc.append(
+				"taxes",
+				{"tax_type": "CGST", "rate": 9, "amount": 9, "mapped_account": TEST_CGST_ACCOUNT},
+			)
+			doc.append(
+				"taxes",
+				{"tax_type": "SGST", "rate": 9, "amount": 9, "mapped_account": TEST_SGST_ACCOUNT},
+			)
+		doc.insert(ignore_permissions=True)
+		return doc
+
+	def test_blocks_when_item_row_unmapped(self):
+		doc = self._make_expense_center(with_tax=False)
+		doc.items[0].mapped_item = None
+		doc.save(ignore_permissions=True)
+
+		with self.assertRaises(frappe.ValidationError):
+			create_purchase_invoice_from_expense_center(doc.name)
+
+	def test_blocks_when_tax_row_unmapped(self):
+		doc = self._make_expense_center(with_tax=True)
+		doc.taxes[0].mapped_account = None
+		doc.save(ignore_permissions=True)
+
+		with self.assertRaises(frappe.ValidationError):
+			create_purchase_invoice_from_expense_center(doc.name)
+
+	def test_creates_draft_invoice_with_taxes(self):
+		doc = self._make_expense_center(with_tax=True)
+		result = create_purchase_invoice_from_expense_center(doc.name)
+
+		pi = frappe.get_doc("Purchase Invoice", result["purchase_invoice"])
+		self.assertEqual(pi.docstatus, 0)  # draft, never submitted
+		self.assertEqual(len(pi.taxes), 2)
+		self.assertEqual(pi.taxes[0].charge_type, "On Net Total")
+		self.assertEqual(pi.taxes[0].account_head, TEST_CGST_ACCOUNT)
+		self.assertIsNone(result["warning"])
+
+		doc.reload()
+		self.assertEqual(doc.invoice_status, "Invoice Created")
+		self.assertEqual(doc.purchase_invoice, pi.name)
+
+	def test_warns_on_grand_total_mismatch(self):
+		doc = self._make_expense_center(with_tax=True)
+		doc.extracted_grand_total = 500
+		doc.save(ignore_permissions=True)
+
+		result = create_purchase_invoice_from_expense_center(doc.name)
+		self.assertIsNotNone(result["warning"])
+
+	def test_blocks_recreating_invoice(self):
+		doc = self._make_expense_center(with_tax=False)
+		create_purchase_invoice_from_expense_center(doc.name)
+
+		with self.assertRaises(frappe.ValidationError):
+			create_purchase_invoice_from_expense_center(doc.name)

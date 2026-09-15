@@ -1,0 +1,88 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-09-15 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "company",
+  "default_uom",
+  "column_break_1",
+  "bifrost_endpoint",
+  "bifrost_model",
+  "bifrost_virtual_key",
+  "webhook_secret"
+ ],
+ "fields": [
+  {
+   "description": "Company that automated Purchase Invoices are created against.",
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "default": "Nos",
+   "fieldname": "default_uom",
+   "fieldtype": "Link",
+   "label": "Default UOM",
+   "options": "UOM",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "https://llm.alfaedge.in/v1/chat/completions",
+   "fieldname": "bifrost_endpoint",
+   "fieldtype": "Data",
+   "label": "Bifrost Endpoint"
+  },
+  {
+   "default": "gpt-4o-mini",
+   "fieldname": "bifrost_model",
+   "fieldtype": "Data",
+   "label": "Bifrost Model"
+  },
+  {
+   "description": "Leave blank to fall back to the BIFROST_VIRTUAL_KEY key in site_config.json.",
+   "fieldname": "bifrost_virtual_key",
+   "fieldtype": "Password",
+   "label": "Bifrost Virtual Key"
+  },
+  {
+   "description": "Shared secret the inbound email webhook must present. Leave blank to fall back to the WEBHOOK_SECRET key in site_config.json.",
+   "fieldname": "webhook_secret",
+   "fieldtype": "Password",
+   "label": "Webhook Secret"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-09-15 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alfaedge Finance",
+ "name": "Purchase Invoice Automation Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
