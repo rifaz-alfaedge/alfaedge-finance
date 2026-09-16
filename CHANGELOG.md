@@ -7,6 +7,8 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-16
+
 ### Added
 - Contributors listed in `pyproject.toml` (`authors`).
 
@@ -53,5 +55,6 @@ and this project uses [Semantic Versioning](https://semver.org/).
 ### Added
 - Initial app scaffold and the pre-existing Bulk Payment CSV tool.
 
-[Unreleased]: https://github.com/rifaz-alfaedge/alfaedge-finance/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rifaz-alfaedge/alfaedge-finance/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/rifaz-alfaedge/alfaedge-finance/releases/tag/v0.2.0
 [0.1.0]: https://github.com/rifaz-alfaedge/alfaedge-finance/releases/tag/v0.1.0
