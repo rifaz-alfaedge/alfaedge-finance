@@ -250,10 +250,11 @@
   },
   {
    "depends_on": "eval:doc.is_tds_applicable",
+   "description": "Selecting one here updates the Supplier's own Tax Withholding Category to match, unless the Supplier is flagged to bypass ERPNext's automatic TDS.",
    "fieldname": "tds_category",
    "fieldtype": "Link",
-   "label": "TDS Category",
-   "options": "TDS Category"
+   "label": "Tax Withholding Category",
+   "options": "Tax Withholding Category"
   },
   {
    "fieldname": "column_break_tds",

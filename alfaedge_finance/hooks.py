@@ -253,8 +253,9 @@ ignore_links_on_delete = ["Purchase Expense Center"]
 # Fixtures
 # --------
 # Custom Fields used by the purchase invoice automation feature: mapping a
-# supplier's line-item text to an internal Item, and linking a created
-# Purchase Invoice back to the Purchase Expense Center it came from.
+# supplier's line-item text to an internal Item, linking a created Purchase
+# Invoice back to the Purchase Expense Center it came from, and opting a
+# Supplier out of ERPNext's automatic TDS.
 
 fixtures = [
 	{
@@ -263,7 +264,11 @@ fixtures = [
 			[
 				"name",
 				"in",
-				["Purchase Invoice Item-mapped_item", "Purchase Invoice-purchase_expense_center"],
+				[
+					"Purchase Invoice Item-mapped_item",
+					"Purchase Invoice-purchase_expense_center",
+					"Supplier-exclude_from_auto_tds",
+				],
 			]
 		],
 	},

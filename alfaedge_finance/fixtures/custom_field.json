@@ -27,5 +27,18 @@
   "options": "Purchase Expense Center",
   "read_only": 1,
   "name": "Purchase Invoice-purchase_expense_center"
+ },
+ {
+  "allow_on_submit": 1,
+  "collapsible": 0,
+  "columns": 0,
+  "description": "Purchase Invoice Automation will never write to this Supplier's Tax Withholding Category, keeping ERPNext's automatic TDS permanently off for it. Use this for suppliers whose invoices never cross ERPNext's own TDS threshold but should still have TDS deducted manually on every invoice (e.g. OVH).",
+  "doctype": "Custom Field",
+  "dt": "Supplier",
+  "fieldname": "exclude_from_auto_tds",
+  "fieldtype": "Check",
+  "insert_after": "tax_withholding_category",
+  "label": "Exclude from Automatic TDS",
+  "name": "Supplier-exclude_from_auto_tds"
  }
 ]

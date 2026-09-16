@@ -42,8 +42,12 @@ drop is not required - it's a plain file picker) and feeds the exact same pipeli
 | `Purchase Expense Center Tax` | Child table of tax rows (type, rate, amount, mapped ledger account) on a `Purchase Expense Center`. |
 | `Purchase Item Mapping` | Global (not per-supplier) map of exact supplier line-item text → internal `Item`. Grows automatically as invoices are reviewed. |
 | `Tax Account Mapping` | Global map of tax type (e.g. `CGST`) → ledger `Account`. |
-| `TDS Category` | Small master list of TDS sections (e.g. "194J - Technical Services (2%)") with a rate and a liability account. |
 | `Purchase Invoice Automation Settings` | Single. Company, default UOM, default TDS account, Bifrost endpoint/model/key, and the webhook shared secret. |
+
+TDS uses ERPNext's own `Tax Withholding Category` doctype rather than a custom one - see
+[TDS deduction](#tds-deduction) below. `Supplier` also gets a custom field,
+`exclude_from_auto_tds` (Check), for suppliers that need TDS deducted manually instead
+of through ERPNext's own automatic mechanism.
 
 `Purchase Invoice Item` also gets a custom field, `mapped_item` (Link → Item), via the
 `custom_field` fixture in `alfaedge_finance/fixtures/`.
@@ -129,43 +133,52 @@ the original document without going through the Purchase Expense Center first.
 
 ### TDS deduction
 
-Most suppliers never cross the TDS threshold on a single invoice, so ERPNext's own
-automatic Tax Withholding Category mechanism (unaffected by this app) rarely fires. A
-few suppliers - e.g. OVHtech R&D (India) Private Limited - should always have TDS
-deducted regardless, which previously meant manually adding a deduction-on-actual tax
-row to every invoice from them. The `Purchase Expense Center` now has a **TDS** section
-for this:
+Two mechanisms exist side by side, and invoice creation picks between them per
+supplier - there is no separate custom "TDS Category" list; everything keys off
+ERPNext's own `Tax Withholding Category` doctype and the Supplier's own field for it.
 
-- `is_tds_applicable`, `tds_category` (Link → `TDS Category`), `tds_rate`, `tds_account`,
-  `tds_amount`.
-- **Auto-detected from the invoice**: if the supplier's own invoice explicitly states a
-  TDS deduction (e.g. "Less: TDS @ 2%"), extraction fills `is_tds_applicable`,
-  `tds_rate`, `tds_amount`, and `tds_account` (from the Settings' Default TDS Account)
-  automatically - Bifrost is told not to invent a TDS figure that isn't printed. This
-  takes priority over the Supplier default below when both are present.
-- **Auto-detected from the Supplier master**: if the invoice itself doesn't state a
-  deduction but the matched Existing Supplier has a `Tax Withholding Category` set
-  (ERPNext's own field), that category's currently-effective rate and this company's
-  configured account are pulled in automatically - the same lookup ERPNext's own
-  automatic TDS uses (`tax_withholding_category.get_tax_withholding_rates`), just run
-  proactively instead of waiting for a cumulative threshold to be crossed. This is what
-  covers OVH-style suppliers whose per-invoice amount never reaches ERPNext's own
-  automatic threshold. `tds_category` (our own doctype) is left blank in this case,
-  since the source was the Supplier's Tax Withholding Category, not a manually-picked
-  one. Also re-runs client-side whenever the reviewer changes `existing_supplier` by
-  hand on the form.
-- **Manual fallback** (when neither of the above applies): the reviewer picks a
-  `TDS Category` from the list - selecting one auto-fills the rate, account, and
-  computes the amount as `extracted_taxable_amount × rate` (TDS is calculated on the
-  pre-GST taxable amount, not the GST-inclusive total).
-- At invoice creation, this becomes a `charge_type = "Actual"`, `category = "Total"`,
-  `add_deduct_tax = "Deduct"` row on the Purchase Invoice - the same shape ERPNext's own
-  automatic TDS uses - reducing the amount payable to the supplier while posting the
-  withheld amount to the TDS liability account. Invoice creation blocks if
-  `is_tds_applicable` is checked but the account or amount is missing, same as item/tax
-  mapping. The grand-total reconciliation check adds the TDS amount back before comparing
-  against the invoice's own printed total, since TDS isn't part of what the supplier
-  billed - it's withheld at payment time.
+**Native (the default, used for most suppliers):** if the resolved Supplier has a
+`Tax Withholding Category` set and isn't flagged `Exclude from Automatic TDS`, invoice
+creation sets `apply_tds = 1` and `tax_withholding_category` on the Purchase Invoice and
+lets ERPNext compute and append the withholding-tax row itself
+(`accounts_controller.set_tax_withholding()` - the same thing that happens if a user
+checked "Apply Tax Withholding Amount" by hand), including its own threshold logic. We
+append nothing ourselves in this case.
+
+**Manual override (for suppliers like OVHtech R&D (India) Private Limited):** some
+suppliers should have TDS deducted on every invoice, but their per-invoice amount never
+crosses ERPNext's own configured threshold, so native `apply_tds` would silently deduct
+nothing (confirmed in testing: a Tax Withholding Category with a real threshold applies
+TDS only once the amount clears it). Flag such a Supplier `Exclude from Automatic TDS`
+(a custom field) - this app then never writes to that Supplier's own
+`tax_withholding_category` and never sets `apply_tds` on invoices for them, and instead
+appends the withholding row manually using the `Purchase Expense Center`'s own TDS
+section fields: `is_tds_applicable`, `tds_category` (Link → `Tax Withholding Category`,
+used only for calculation here, not synced anywhere), `tds_rate`, `tds_account`,
+`tds_amount`.
+
+The manual TDS section fills in from, in priority order:
+1. **The invoice itself**, if it explicitly states a TDS deduction (e.g. "Less: TDS @
+   2%") - extraction fills `tds_rate`/`tds_amount`/`tds_account` (from Settings' Default
+   TDS Account) directly; Bifrost is told not to invent a figure that isn't printed.
+2. **The Supplier's Tax Withholding Category**, if the invoice doesn't state one -
+   resolved the same way ERPNext's own automatic TDS would (currently-effective rate by
+   date, this company's configured account), just applied proactively instead of
+   waiting on a threshold. Also re-runs client-side whenever a reviewer changes
+   `existing_supplier` by hand.
+3. **Manual pick**: the reviewer selects a `Tax Withholding Category` directly - this
+   auto-fills rate/account and computes `tds_amount` as `extracted_taxable_amount ×
+   rate` (on the pre-GST taxable amount, not the GST-inclusive total).
+
+Saving a `Purchase Expense Center` with `tds_category` set updates the matched
+Supplier's own `tax_withholding_category` to the same value automatically (unless that
+Supplier is excluded per above) - so once picked, that Supplier's future invoices go
+through the native path with no further manual selection needed. Invoice creation
+blocks if `is_tds_applicable` is checked (manual path) but the account or amount is
+missing, same as item/tax mapping. The grand-total reconciliation check accounts for
+either path - it reads back whatever ERPNext actually deducted for the native case
+(which may be less than expected, or nothing, depending on its own threshold logic)
+rather than trusting our own pre-computed estimate.
 
 ### Running the tests
 

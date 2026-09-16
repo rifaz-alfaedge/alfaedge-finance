@@ -8,10 +8,23 @@ and this project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- TDS is now also auto-detected from an Existing Supplier's `Tax Withholding Category`
-  (rate + this company's configured account) when the invoice itself doesn't state a
-  deduction - covers suppliers whose per-invoice amount never crosses ERPNext's own
-  automatic-TDS threshold. Invoice-stated TDS still takes priority when both apply.
+- TDS now uses ERPNext's own `Tax Withholding Category` doctype instead of a custom
+  one, and invoice creation picks between two mechanisms per supplier:
+  - **Native**: if the Supplier has a Tax Withholding Category and isn't flagged
+    `Exclude from Automatic TDS` (new Supplier custom field), the Purchase Invoice gets
+    `apply_tds = 1` and ERPNext computes and appends the withholding row itself,
+    threshold logic included.
+  - **Manual override**: for suppliers flagged excluded (e.g. OVHtech R&D, whose
+    per-invoice amount never crosses ERPNext's own threshold, so native `apply_tds`
+    would silently deduct nothing), TDS is detected from the invoice itself, the
+    Supplier's category, or a manual pick, and appended as our own withholding row
+    using the `Purchase Expense Center`'s TDS section fields - unchanged from before,
+    just now gated on this flag instead of always running.
+  - Picking a Tax Withholding Category on a non-excluded supplier's record now updates
+    that Supplier's own field to match, so future invoices from them go native without
+    needing to pick it again.
+  - The grand-total reconciliation check now reads back what ERPNext actually deducted
+    for the native path, rather than trusting a pre-computed estimate.
 
 ### Fixed
 - A cancelled Purchase Invoice could not be deleted because its source Purchase

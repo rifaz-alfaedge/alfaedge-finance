@@ -59,6 +59,7 @@ frappe.ui.form.on("Purchase Expense Center", {
 				if (!tds) return;
 
 				frm.set_value("is_tds_applicable", 1);
+				frm.set_value("tds_category", tds.category);
 				frm.set_value("tds_rate", tds.rate);
 				if (!frm.doc.tds_account) {
 					frm.set_value("tds_account", tds.account);
@@ -70,7 +71,7 @@ frappe.ui.form.on("Purchase Expense Center", {
 					);
 				}
 				frappe.show_alert({
-					message: __("TDS Category {0} found on this Supplier - TDS fields pre-filled.", [tds.category]),
+					message: __("Tax Withholding Category {0} found on this Supplier - TDS fields pre-filled.", [tds.category]),
 					indicator: "blue",
 				});
 			},
@@ -80,18 +81,28 @@ frappe.ui.form.on("Purchase Expense Center", {
 	tds_category(frm) {
 		if (!frm.doc.tds_category) return;
 
-		frappe.db.get_doc("TDS Category", frm.doc.tds_category).then((category) => {
-			frm.set_value("is_tds_applicable", 1);
-			frm.set_value("tds_rate", category.rate);
-			if (!frm.doc.tds_account) {
-				frm.set_value("tds_account", category.account);
-			}
-			if (frm.doc.extracted_taxable_amount) {
-				frm.set_value(
-					"tds_amount",
-					flt((frm.doc.extracted_taxable_amount * category.rate) / 100, precision("tds_amount", frm.doc))
-				);
-			}
+		frappe.call({
+			method: "alfaedge_finance.alfaedge_finance.doctype.purchase_expense_center.purchase_expense_center.get_tax_withholding_category_rate",
+			args: { category: frm.doc.tds_category, posting_date: frm.doc.supplier_invoice_date },
+			callback(r) {
+				const tds = r.message;
+				if (!tds) {
+					frappe.msgprint(__("This Tax Withholding Category has no rate covering this invoice's date, or no account configured for this company."));
+					return;
+				}
+
+				frm.set_value("is_tds_applicable", 1);
+				frm.set_value("tds_rate", tds.rate);
+				if (!frm.doc.tds_account) {
+					frm.set_value("tds_account", tds.account);
+				}
+				if (frm.doc.extracted_taxable_amount) {
+					frm.set_value(
+						"tds_amount",
+						flt((frm.doc.extracted_taxable_amount * tds.rate) / 100, precision("tds_amount", frm.doc))
+					);
+				}
+			},
 		});
 	},
 });

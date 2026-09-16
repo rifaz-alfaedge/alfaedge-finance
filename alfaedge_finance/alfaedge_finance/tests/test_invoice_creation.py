@@ -49,13 +49,21 @@ class TestInvoiceCreation(FrappeTestCase):
 		settings.default_uom = "Nos"
 		settings.save(ignore_permissions=True)
 
-		if not frappe.db.exists("TDS Category", "TEST-194J"):
+		if not frappe.db.exists("Tax Withholding Category", "TEST TWC 194J"):
 			frappe.get_doc(
 				{
-					"doctype": "TDS Category",
-					"category_name": "TEST-194J",
-					"rate": 2,
-					"account": TEST_TDS_ACCOUNT,
+					"doctype": "Tax Withholding Category",
+					"name": "TEST TWC 194J",
+					"category_name": "TEST TWC 194J",
+					"rates": [
+						{
+							"from_date": "2020-01-01",
+							"to_date": "2099-12-31",
+							"tax_withholding_rate": 2,
+							"single_threshold": 1,  # low on purpose: any test invoice amount should trigger TDS
+						}
+					],
+					"accounts": [{"company": COMPANY, "account": TEST_TDS_ACCOUNT}],
 				}
 			).insert(ignore_permissions=True)
 
@@ -222,10 +230,14 @@ class TestInvoiceCreation(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			create_purchase_invoice_from_expense_center(doc.name)
 
-	def test_creates_invoice_with_tds_deduction(self):
+	def test_creates_invoice_with_manual_tds_deduction(self):
+		# No Tax Withholding Category picked here - just tds_rate/account/amount
+		# entered directly. (Picking a category on a non-excluded supplier
+		# immediately syncs it to the Supplier - see
+		# test_picking_tds_category_updates_the_supplier - which would make this
+		# go native instead; that's covered separately.)
 		doc = self._make_expense_center(with_tax=False)
 		doc.is_tds_applicable = 1
-		doc.tds_category = "TEST-194J"
 		doc.tds_rate = 2
 		doc.tds_account = TEST_TDS_ACCOUNT
 		doc.tds_amount = 2  # 2% of the 100 taxable amount
@@ -235,6 +247,7 @@ class TestInvoiceCreation(FrappeTestCase):
 		result = create_purchase_invoice_from_expense_center(doc.name)
 
 		pi = frappe.get_doc("Purchase Invoice", result["purchase_invoice"])
+		self.assertEqual(pi.apply_tds, 0)
 		tds_rows = [row for row in pi.taxes if row.account_head == TEST_TDS_ACCOUNT]
 		self.assertEqual(len(tds_rows), 1)
 		self.assertEqual(tds_rows[0].charge_type, "Actual")
@@ -244,3 +257,117 @@ class TestInvoiceCreation(FrappeTestCase):
 		# extracted_grand_total (100) is pre-TDS, so this must not warn despite
 		# pi.grand_total (98) differing from it by more than the ₹1 tolerance.
 		self.assertIsNone(result["warning"])
+
+	def test_picking_tds_category_updates_the_supplier(self):
+		gstin = "24AAQCA8719H1ZC"
+		if not frappe.db.exists("Supplier", {"gstin": gstin}):
+			supplier = frappe.get_doc(
+				{
+					"doctype": "Supplier",
+					"supplier_name": "PIA Category Sync Supplier",
+					"supplier_group": "All Supplier Groups",
+					"supplier_type": "Company",
+					"gstin": gstin,
+				}
+			).insert(ignore_permissions=True)
+		else:
+			supplier = frappe.get_doc("Supplier", {"gstin": gstin})
+		self.assertFalse(supplier.tax_withholding_category)
+
+		doc = frappe.get_doc(
+			{
+				"doctype": "Purchase Expense Center",
+				"source": "Manual Upload",
+				"supplier_type": "Existing",
+				"existing_supplier": supplier.name,
+				"is_tds_applicable": 1,
+				"tds_category": "TEST TWC 194J",
+			}
+		)
+		doc.insert(ignore_permissions=True)
+
+		self.assertEqual(
+			frappe.db.get_value("Supplier", supplier.name, "tax_withholding_category"),
+			"TEST TWC 194J",
+		)
+
+	def test_creates_invoice_with_native_apply_tds(self):
+		gstin = "27AABCU9603R1ZN"
+		if not frappe.db.exists("Supplier", {"gstin": gstin}):
+			supplier = frappe.get_doc(
+				{
+					"doctype": "Supplier",
+					"supplier_name": "PIA Native TDS Supplier",
+					"supplier_group": "All Supplier Groups",
+					"supplier_type": "Company",
+					"gstin": gstin,
+					"tax_withholding_category": "TEST TWC 194J",
+				}
+			).insert(ignore_permissions=True)
+		else:
+			supplier = frappe.get_doc("Supplier", {"gstin": gstin})
+
+		doc = frappe.get_doc(
+			{
+				"doctype": "Purchase Expense Center",
+				"source": "Manual Upload",
+				"status": "Extracted",
+				"supplier_type": "Existing",
+				"existing_supplier": supplier.name,
+				"supplier_gst": gstin,
+				"supplier_invoice_number": frappe.generate_hash(length=8),
+				"supplier_invoice_date": "2026-01-15",
+			}
+		)
+		doc.append(
+			"items",
+			{
+				"item_name": "Widget",
+				"description": "Widget",
+				"qty": 1,
+				"rate": 1000,
+				"amount": 1000,
+				"uom": "Nos",
+				"stock_qty": 1,
+				"base_rate": 1000,
+				"base_amount": 1000,
+				"mapped_item": TEST_ITEM,
+			},
+		)
+		doc.insert(ignore_permissions=True)
+
+		result = create_purchase_invoice_from_expense_center(doc.name)
+
+		pi = frappe.get_doc("Purchase Invoice", result["purchase_invoice"])
+		self.assertEqual(pi.apply_tds, 1)
+		self.assertEqual(pi.tax_withholding_category, "TEST TWC 194J")
+		# ERPNext's own set_tax_withholding() computed and appended this row - we
+		# didn't build it ourselves.
+		tds_rows = [row for row in pi.taxes if row.account_head == TEST_TDS_ACCOUNT]
+		self.assertEqual(len(tds_rows), 1)
+		self.assertEqual(tds_rows[0].tax_amount, 20)  # 2% of 1000
+
+	def test_excluded_supplier_never_uses_native_apply_tds(self):
+		gstin = "29AACCO6253G1ZB"  # the real OVH GSTIN, seeded with exclude_from_auto_tds=1
+		if not frappe.db.exists("Supplier", {"gstin": gstin}):
+			self.skipTest("OVH supplier fixture not present on this site")
+
+		doc = self._make_expense_center(with_tax=False)
+		doc.supplier_gst = gstin
+		doc.existing_supplier = frappe.db.get_value("Supplier", {"gstin": gstin}, "name")
+		doc.is_tds_applicable = 1
+		doc.tds_category = "TEST TWC 194J"
+		doc.tds_rate = 2
+		doc.tds_account = TEST_TDS_ACCOUNT
+		doc.tds_amount = 2
+		doc.save(ignore_permissions=True)
+
+		result = create_purchase_invoice_from_expense_center(doc.name)
+
+		pi = frappe.get_doc("Purchase Invoice", result["purchase_invoice"])
+		self.assertEqual(pi.apply_tds, 0)
+		self.assertTrue(any(row.account_head == TEST_TDS_ACCOUNT for row in pi.taxes))
+
+		self.assertFalse(
+			frappe.db.get_value("Supplier", doc.existing_supplier, "tax_withholding_category")
+		)

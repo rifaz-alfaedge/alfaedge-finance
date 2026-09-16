@@ -13,12 +13,13 @@ from alfaedge_finance.alfaedge_finance.doctype.purchase_invoice_automation_setti
 from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_resolution import (
 	create_supplier_and_address,
 	resolve_by_gst,
+	supplier_uses_automatic_tds,
 )
 
 GRAND_TOTAL_TOLERANCE = 1.0
 
 
-def _validate_mappings(expense_center):
+def _validate_mappings(expense_center, use_native_tds):
 	missing_items = [row.idx for row in expense_center.items if not row.mapped_item]
 	missing_taxes = [row.idx for row in expense_center.taxes if not row.mapped_account]
 
@@ -29,7 +30,12 @@ def _validate_mappings(expense_center):
 		errors.append(
 			_("Tax row(s) {0} are missing a Mapped Account.").format(", ".join(map(str, missing_taxes)))
 		)
-	if expense_center.is_tds_applicable and not (expense_center.tds_account and expense_center.tds_amount):
+	# Native apply_tds sources its own account from the Supplier's Tax Withholding
+	# Category and computes its own amount - only the manual-override path needs
+	# these filled in by us.
+	if expense_center.is_tds_applicable and not use_native_tds and not (
+		expense_center.tds_account and expense_center.tds_amount
+	):
 		errors.append(_("TDS is marked applicable but is missing a TDS Account or TDS Amount."))
 	if errors:
 		frappe.throw("<br>".join(errors), title=_("Mapping Incomplete"))
@@ -51,10 +57,15 @@ def create_purchase_invoice_from_expense_center(expense_center_name: str) -> dic
 	if expense_center.purchase_invoice:
 		frappe.throw(_("Invoice has already been created for this record."))
 
-	_validate_mappings(expense_center)
-
 	supplier = _resolve_supplier(expense_center)
 	settings = get_settings()
+	# True for suppliers set up for ERPNext's own automatic TDS (a Tax Withholding
+	# Category on the Supplier, and not flagged to bypass it) - false for suppliers
+	# like OVH whose invoices never cross ERPNext's own threshold, where TDS is
+	# deducted manually via the tds_rate/tds_account/tds_amount fields instead.
+	use_native_tds = supplier_uses_automatic_tds(supplier)
+
+	_validate_mappings(expense_center, use_native_tds)
 
 	pi = frappe.new_doc("Purchase Invoice")
 	pi.company = settings["company"]
@@ -105,11 +116,25 @@ def create_purchase_invoice_from_expense_center(expense_center_name: str) -> dic
 			},
 		)
 
-	if expense_center.is_tds_applicable:
-		# Mirrors erpnext's own automatic TDS row shape
-		# (tax_withholding_category.get_tax_row_for_tds): a fixed amount deducted from
-		# the amount payable, not a GST account, so india_compliance's per-item GST
-		# breakup requirement (see the comment above) doesn't apply to this row.
+	if use_native_tds:
+		# Let ERPNext compute and append its own withholding-tax row (same
+		# accounts_controller.set_tax_withholding() mechanism as if a user had
+		# checked "Apply Tax Withholding Amount" by hand) - it sources the account
+		# from the Tax Withholding Category itself and applies its own threshold
+		# logic (which may decide not to deduct anything this time), so we don't
+		# append anything ourselves here. Independent of is_tds_applicable, which
+		# is our own signal for the manual-override path below.
+		pi.apply_tds = 1
+		pi.tax_withholding_category = frappe.db.get_value("Supplier", supplier, "tax_withholding_category")
+	elif expense_center.is_tds_applicable:
+		# Manual override path (e.g. OVH): this supplier's invoices never cross
+		# ERPNext's own threshold, so native apply_tds would silently deduct
+		# nothing. Append the same row shape
+		# (tax_withholding_category.get_tax_row_for_tds) ourselves, using the
+		# rate/account/amount already reviewed on the Purchase Expense Center - a
+		# fixed amount deducted from the amount payable, not a GST account, so
+		# india_compliance's per-item GST breakup requirement (see the comment
+		# above) doesn't apply to this row.
 		pi.append(
 			"taxes",
 			{
@@ -148,7 +173,15 @@ def create_purchase_invoice_from_expense_center(expense_center_name: str) -> dic
 		# deduction (TDS is withheld at payment time, it isn't part of what the
 		# supplier billed) - add back what TDS subtracted so the comparison is
 		# apples-to-apples.
-		tds_deducted = expense_center.tds_amount or 0 if expense_center.is_tds_applicable else 0
+		if use_native_tds:
+			# Trust what ERPNext actually deducted (threshold-dependent - could be
+			# less than our own rough estimate, or nothing at all) over our
+			# pre-computed tds_amount.
+			tds_deducted = sum(
+				row.tax_amount or 0 for row in pi.taxes if row.category == "Total" and row.add_deduct_tax == "Deduct"
+			)
+		else:
+			tds_deducted = expense_center.tds_amount or 0 if expense_center.is_tds_applicable else 0
 		comparable_total = pi.grand_total + tds_deducted
 		diff = abs(comparable_total - expense_center.extracted_grand_total)
 		if diff > GRAND_TOTAL_TOLERANCE:

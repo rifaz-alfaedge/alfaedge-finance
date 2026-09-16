@@ -16,14 +16,12 @@ def resolve_by_gst(gst_number: str | None) -> str | None:
 	return frappe.db.get_value("Supplier", {"gstin": gst_number}, "name")
 
 
-def get_tds_from_supplier(supplier: str, company: str, reference_date=None) -> dict | None:
-	"""If the matched Supplier has a Tax Withholding Category set, resolve it to a
-	{rate, account} pair the same way ERPNext's own automatic TDS would - the
-	currently-effective rate (by reference_date) and this company's configured
-	account. Returns None if the supplier has no category, or nothing in it applies
-	yet (no dated rate, no account for this company).
+def resolve_tax_withholding_category(category: str, company: str, reference_date=None) -> dict | None:
+	"""Resolve a Tax Withholding Category to a {rate, account} pair the same way
+	ERPNext's own automatic TDS would - the currently-effective rate (by
+	reference_date) and this company's configured account. Returns None if
+	nothing in it applies yet (no dated rate, no account for this company).
 	"""
-	category = frappe.db.get_value("Supplier", supplier, "tax_withholding_category")
 	if not category:
 		return None
 
@@ -47,6 +45,56 @@ def get_tds_from_supplier(supplier: str, company: str, reference_date=None) -> d
 		return None
 
 	return {"category": category, "rate": rate, "account": account}
+
+
+def get_tds_from_supplier(supplier: str, company: str, reference_date=None) -> dict | None:
+	"""If the matched Supplier has a Tax Withholding Category set, resolve it via
+	resolve_tax_withholding_category(). Returns None if the supplier has none.
+	"""
+	category = frappe.db.get_value("Supplier", supplier, "tax_withholding_category")
+	if not category:
+		return None
+	return resolve_tax_withholding_category(category, company, reference_date)
+
+
+def sync_tax_withholding_category_to_supplier(doc):
+	"""When a reviewer sets/changes the Tax Withholding Category on a Purchase
+	Expense Center for an Existing Supplier, remember it on the Supplier itself so
+	future invoices from them apply TDS the standard ERPNext way (apply_tds)
+	without needing to pick it again here.
+
+	Skipped for a Supplier flagged exclude_from_auto_tds - that flag means this
+	app must never turn on ERPNext's automatic TDS for them (their invoices don't
+	cross ERPNext's own threshold, so automatic TDS would silently not apply; TDS
+	is instead deducted manually via the tds_rate/tds_account/tds_amount fields
+	regardless of any Tax Withholding Category picked here for calculation).
+	"""
+	if not (doc.tds_category and doc.supplier_type == "Existing" and doc.existing_supplier):
+		return
+
+	supplier = frappe.db.get_value(
+		"Supplier",
+		doc.existing_supplier,
+		["tax_withholding_category", "exclude_from_auto_tds"],
+		as_dict=True,
+	)
+	if not supplier or supplier.exclude_from_auto_tds:
+		return
+
+	if supplier.tax_withholding_category != doc.tds_category:
+		frappe.db.set_value("Supplier", doc.existing_supplier, "tax_withholding_category", doc.tds_category)
+
+
+def supplier_uses_automatic_tds(supplier: str) -> bool:
+	"""True if this Supplier is set up for ERPNext's own automatic TDS (a Tax
+	Withholding Category is set and it isn't flagged to bypass automatic TDS) -
+	the signal invoice_creation uses to decide whether to let ERPNext compute the
+	withholding tax itself (apply_tds) instead of appending our own manual row.
+	"""
+	supplier_doc = frappe.db.get_value(
+		"Supplier", supplier, ["tax_withholding_category", "exclude_from_auto_tds"], as_dict=True
+	)
+	return bool(supplier_doc and supplier_doc.tax_withholding_category and not supplier_doc.exclude_from_auto_tds)
 
 
 def _safe_gstin(gst_number: str | None) -> str | None:

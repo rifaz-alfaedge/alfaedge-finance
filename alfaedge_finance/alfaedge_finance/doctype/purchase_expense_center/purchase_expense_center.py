@@ -8,8 +8,12 @@ class PurchaseExpenseCenter(Document):
 		from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.mapping_sync import (
 			sync_mappings,
 		)
+		from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_resolution import (
+			sync_tax_withholding_category_to_supplier,
+		)
 
 		sync_mappings(self)
+		sync_tax_withholding_category_to_supplier(self)
 
 
 @frappe.whitelist()
@@ -27,6 +31,23 @@ def get_supplier_tds(supplier, posting_date=None):
 
 	settings = get_settings()
 	return get_tds_from_supplier(supplier, settings["company"], posting_date)
+
+
+@frappe.whitelist()
+def get_tax_withholding_category_rate(category, posting_date=None):
+	"""Used by the form JS when a reviewer picks a Tax Withholding Category by
+	hand (the manual-fallback path), to pre-fill rate/account the same way as the
+	automatic detection paths.
+	"""
+	from alfaedge_finance.alfaedge_finance.doctype.purchase_invoice_automation_settings.purchase_invoice_automation_settings import (
+		get_settings,
+	)
+	from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_resolution import (
+		resolve_tax_withholding_category,
+	)
+
+	settings = get_settings()
+	return resolve_tax_withholding_category(category, settings["company"], posting_date)
 
 
 @frappe.whitelist()

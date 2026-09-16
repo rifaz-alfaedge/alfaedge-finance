@@ -184,6 +184,7 @@ def _apply_extraction(doc, parsed: dict):
 		tds = get_tds_from_supplier(doc.existing_supplier, settings["company"], doc.supplier_invoice_date)
 		if tds:
 			doc.is_tds_applicable = 1
+			doc.tds_category = tds["category"]
 			doc.tds_rate = tds["rate"]
 			doc.tds_account = tds["account"]
 			if doc.extracted_taxable_amount:
