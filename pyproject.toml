@@ -1,7 +1,9 @@
 [project]
 name = "alfaedge_finance"
 authors = [
-    { name = "alfaEdge", email = "mail@alfaedge.org"}
+    { name = "alfaEdge", email = "mail@alfaedge.org"},
+    { name = "Rifaz Mohammed", email = "rifazmohammed@gmail.com"},
+    { name = "Claude", email = "noreply@anthropic.com"}
 ]
 description = "Finance App"
 requires-python = ">=3.10"
