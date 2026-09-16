@@ -108,6 +108,21 @@ for future invoices. Tax account mapping has no bulk tool - in practice there ar
 a handful of distinct tax types (CGST/SGST/IGST/Other), so mapping them individually
 during the first few invoice reviews is simpler than building a second bulk dialog.
 
+Either way, mapping is remembered from that point on: saving a `Purchase Expense
+Center` with a `mapped_item`/`mapped_account` set on any row - whether it got there via
+the bulk dialog, extraction prefill, or just typed in by hand - upserts it into
+`Purchase Item Mapping`/`Tax Account Mapping` automatically (`on_update`, see
+`purchase_invoice_automation/mapping_sync.py`). You never need to map the same
+description or tax type twice.
+
+### Linking back from the Purchase Invoice
+
+The created `Purchase Invoice` gets a read-only `purchase_expense_center` field (a
+custom field) pointing back to its source record, and the original PDF is attached to
+the Purchase Invoice as well (referencing the same stored file, not a duplicate copy) -
+so a reviewer looking at the invoice alone can trace it back to the email/upload and
+the original document without going through the Purchase Expense Center first.
+
 ### TDS deduction
 
 Most suppliers never cross the TDS threshold on a single invoice, so ERPNext's own

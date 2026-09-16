@@ -129,6 +129,32 @@ class TestInvoiceCreation(FrappeTestCase):
 		doc.reload()
 		self.assertEqual(doc.invoice_status, "Invoice Created")
 		self.assertEqual(doc.purchase_invoice, pi.name)
+		self.assertEqual(pi.purchase_expense_center, doc.name)
+
+	def test_source_pdf_is_attached_to_the_invoice_too(self):
+		doc = self._make_expense_center(with_tax=False)
+		# .txt, not .pdf: this test is about copying the File reference across
+		# doctypes, not about PDF content validation.
+		file_doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": "test_invoice.txt",
+				"attached_to_doctype": "Purchase Expense Center",
+				"attached_to_name": doc.name,
+				"content": b"test invoice placeholder",
+				"is_private": 1,
+			}
+		).insert(ignore_permissions=True)
+		doc.pdf_attachment = file_doc.file_url
+		doc.save(ignore_permissions=True)
+
+		result = create_purchase_invoice_from_expense_center(doc.name)
+
+		attached = frappe.get_all(
+			"File",
+			filters={"attached_to_doctype": "Purchase Invoice", "attached_to_name": result["purchase_invoice"]},
+		)
+		self.assertEqual(len(attached), 1)
 
 	def test_warns_on_grand_total_mismatch(self):
 		doc = self._make_expense_center(with_tax=True)

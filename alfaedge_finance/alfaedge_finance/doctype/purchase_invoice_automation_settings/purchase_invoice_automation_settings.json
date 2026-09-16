@@ -33,6 +33,7 @@
    "reqd": 1
   },
   {
+   "default": "TDS Payable - CDS",
    "description": "Default TDS liability account, used to prefill the TDS Account field whenever a TDS deduction is detected or selected. Optional - can be left blank and filled in per-record.",
    "fieldname": "default_tds_account",
    "fieldtype": "Link",

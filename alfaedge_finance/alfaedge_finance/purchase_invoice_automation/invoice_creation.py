@@ -62,6 +62,7 @@ def create_purchase_invoice_from_expense_center(expense_center_name: str) -> dic
 	pi.bill_no = expense_center.supplier_invoice_number
 	pi.bill_date = expense_center.supplier_invoice_date
 	pi.set_posting_time = 1
+	pi.purchase_expense_center = expense_center.name
 
 	for row in expense_center.items:
 		item_master_name = frappe.db.get_value("Item", row.mapped_item, "item_name") or row.mapped_item
@@ -120,6 +121,24 @@ def create_purchase_invoice_from_expense_center(expense_center_name: str) -> dic
 		)
 
 	pi.insert(ignore_permissions=True)
+
+	if expense_center.pdf_attachment:
+		try:
+			frappe.get_doc(
+				{
+					"doctype": "File",
+					"file_url": expense_center.pdf_attachment,
+					"file_name": expense_center.pdf_attachment.rsplit("/", 1)[-1],
+					"attached_to_doctype": "Purchase Invoice",
+					"attached_to_name": pi.name,
+					"is_private": 1,
+				}
+			).insert(ignore_permissions=True)
+		except Exception:
+			frappe.log_error(
+				title="Purchase Invoice Automation: could not attach source PDF to invoice",
+				message=frappe.get_traceback(),
+			)
 
 	warning = None
 	if expense_center.extracted_grand_total:

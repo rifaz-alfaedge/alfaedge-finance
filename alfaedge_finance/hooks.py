@@ -244,10 +244,20 @@ doctype_list_js = {"Purchase Expense Center": "public/js/purchase_expense_center
 
 # Fixtures
 # --------
-# Custom Field: Purchase Invoice Item.mapped_item, used by the purchase invoice
-# automation feature to link a supplier's line-item text to an internal Item.
+# Custom Fields used by the purchase invoice automation feature: mapping a
+# supplier's line-item text to an internal Item, and linking a created
+# Purchase Invoice back to the Purchase Expense Center it came from.
 
 fixtures = [
-	{"doctype": "Custom Field", "filters": [["name", "=", "Purchase Invoice Item-mapped_item"]]},
+	{
+		"doctype": "Custom Field",
+		"filters": [
+			[
+				"name",
+				"in",
+				["Purchase Invoice Item-mapped_item", "Purchase Invoice-purchase_expense_center"],
+			]
+		],
+	},
 ]
 

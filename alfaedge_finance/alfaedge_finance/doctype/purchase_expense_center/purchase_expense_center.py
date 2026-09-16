@@ -4,7 +4,12 @@ from frappe.model.document import Document
 
 
 class PurchaseExpenseCenter(Document):
-	pass
+	def on_update(self):
+		from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.mapping_sync import (
+			sync_mappings,
+		)
+
+		sync_mappings(self)
 
 
 @frappe.whitelist()

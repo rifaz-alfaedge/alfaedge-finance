@@ -12,5 +12,20 @@
   "label": "Mapped Item",
   "options": "Item",
   "name": "Purchase Invoice Item-mapped_item"
+ },
+ {
+  "allow_on_submit": 1,
+  "collapsible": 0,
+  "columns": 0,
+  "description": "The Purchase Expense Center this invoice was automatically created from, if any.",
+  "doctype": "Custom Field",
+  "dt": "Purchase Invoice",
+  "fieldname": "purchase_expense_center",
+  "fieldtype": "Link",
+  "insert_after": "title",
+  "label": "Purchase Expense Center",
+  "options": "Purchase Expense Center",
+  "read_only": 1,
+  "name": "Purchase Invoice-purchase_expense_center"
  }
 ]
