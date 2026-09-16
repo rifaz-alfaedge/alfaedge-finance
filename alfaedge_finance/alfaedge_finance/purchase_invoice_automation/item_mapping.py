@@ -10,6 +10,10 @@ import json
 
 import frappe
 
+from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.text_normalization import (
+	normalize_for_matching,
+)
+
 
 @frappe.whitelist()
 def get_unmapped_item_descriptions():
@@ -47,15 +51,16 @@ def bulk_map_items(mapping):
 		)
 		updated += frappe.db.sql("select row_count()")[0][0]
 
-		if frappe.db.exists("Purchase Item Mapping", {"supplier_item_description": item_name}):
+		key = normalize_for_matching(item_name)
+		if frappe.db.exists("Purchase Item Mapping", {"supplier_item_description": key}):
 			frappe.db.set_value(
-				"Purchase Item Mapping", {"supplier_item_description": item_name}, "mapped_item", mapped_item
+				"Purchase Item Mapping", {"supplier_item_description": key}, "mapped_item", mapped_item
 			)
 		else:
 			frappe.get_doc(
 				{
 					"doctype": "Purchase Item Mapping",
-					"supplier_item_description": item_name,
+					"supplier_item_description": key,
 					"mapped_item": mapped_item,
 				}
 			).insert(ignore_permissions=True)

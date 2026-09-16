@@ -6,13 +6,17 @@ row would work for that one invoice but never get remembered for the next one.
 
 import frappe
 
+from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.text_normalization import (
+	normalize_for_matching,
+)
+
 
 def sync_mappings(doc):
 	for row in doc.items:
 		if row.mapped_item and row.item_name:
 			_upsert(
 				"Purchase Item Mapping",
-				{"supplier_item_description": row.item_name},
+				{"supplier_item_description": normalize_for_matching(row.item_name)},
 				"mapped_item",
 				row.mapped_item,
 			)

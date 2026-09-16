@@ -1,0 +1,124 @@
+{
+ "charts": [],
+ "content": "[{\"id\":\"afHeaderShortcuts\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Purchase Invoice Automation</b></span>\",\"col\":12}},{\"id\":\"afScPEC\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purchase Expense Center\",\"col\":3}},{\"id\":\"afScItemMap\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purchase Item Mapping\",\"col\":3}},{\"id\":\"afScTaxMap\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Tax Account Mapping\",\"col\":3}},{\"id\":\"afScSettings\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purchase Invoice Automation Settings\",\"col\":3}},{\"id\":\"afSpacer1\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"afHeaderMasters\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Masters & Tools</b></span>\",\"col\":12}},{\"id\":\"afCardMappings\",\"type\":\"card\",\"data\":{\"card_name\":\"Mappings\",\"col\":4}},{\"id\":\"afCardOther\",\"type\":\"card\",\"data\":{\"card_name\":\"Other Tools\",\"col\":4}}]",
+ "creation": "2026-09-17 00:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "small-file",
+ "idx": 0,
+ "indicator_color": "",
+ "is_hidden": 0,
+ "label": "Alfaedge Finance",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Mappings",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Purchase Item Mapping",
+   "link_count": 0,
+   "link_to": "Purchase Item Mapping",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Tax Account Mapping",
+   "link_count": 0,
+   "link_to": "Tax Account Mapping",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Tax Withholding Category",
+   "link_count": 0,
+   "link_to": "Tax Withholding Category",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Other Tools",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Purchase Invoice Automation Settings",
+   "link_count": 0,
+   "link_to": "Purchase Invoice Automation Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Bulk Payment CSV",
+   "link_count": 0,
+   "link_to": "bulk-payment-csv",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-09-17 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alfaedge Finance",
+ "name": "Alfaedge Finance",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [],
+ "sequence_id": 1.0,
+ "shortcuts": [
+  {
+   "doc_view": "List",
+   "label": "Purchase Expense Center",
+   "link_to": "Purchase Expense Center",
+   "type": "DocType"
+  },
+  {
+   "doc_view": "List",
+   "label": "Purchase Item Mapping",
+   "link_to": "Purchase Item Mapping",
+   "type": "DocType"
+  },
+  {
+   "doc_view": "List",
+   "label": "Tax Account Mapping",
+   "link_to": "Tax Account Mapping",
+   "type": "DocType"
+  },
+  {
+   "doc_view": "",
+   "label": "Purchase Invoice Automation Settings",
+   "link_to": "Purchase Invoice Automation Settings",
+   "type": "DocType"
+  }
+ ],
+ "title": "Alfaedge Finance"
+}

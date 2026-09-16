@@ -121,7 +121,23 @@ Center` with a `mapped_item`/`mapped_account` set on any row - whether it got th
 the bulk dialog, extraction prefill, or just typed in by hand - upserts it into
 `Purchase Item Mapping`/`Tax Account Mapping` automatically (`on_update`, see
 `purchase_invoice_automation/mapping_sync.py`). You never need to map the same
-description or tax type twice.
+description or tax type twice, and it's permanent regardless of what later happens to
+the `Purchase Expense Center` it was mapped on (deleting that record does not remove the
+mapping - they're independent doctypes).
+
+Matching is normalized (whitespace collapsed, case-insensitive) before it's used as the
+lookup/storage key, so trivial LLM re-wording between two extractions of what is
+otherwise the same line item (`"SYS-1 rental"` vs `"  SYS-1   Rental  "`) still matches
+the existing mapping (`purchase_invoice_automation/text_normalization.py`). The item's
+*displayed* text on the invoice keeps its original casing/spacing - only the mapping key
+is normalized. This does not merge two descriptions that are genuinely different text
+(e.g. a recurring hosting invoice that appends a different date range or IP address each
+month) - those still need mapping once per distinct wording, since we deliberately don't
+do fuzzy/similarity matching (a real risk of silently mapping to the wrong Item).
+
+Manage `Purchase Item Mapping` and `Tax Account Mapping` directly, independent of any
+`Purchase Expense Center`, from the **Alfaedge Finance** workspace in the Desk sidebar -
+standard Frappe list views, so you can add, edit, or delete mapping rows freely.
 
 ### Linking back from the Purchase Invoice
 

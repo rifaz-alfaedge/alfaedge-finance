@@ -8,6 +8,18 @@ and this project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Alfaedge Finance workspace** in the Desk sidebar, with shortcuts and link cards to
+  `Purchase Expense Center`, `Purchase Item Mapping`, `Tax Account Mapping`, and
+  `Purchase Invoice Automation Settings` - so mappings can be viewed and managed
+  directly, without going through a `Purchase Expense Center`.
+- Item/tax mapping matching is now normalized (whitespace collapsed, lowercased)
+  before being used as the lookup/storage key, so trivial LLM re-wording between two
+  extractions of the same line item no longer looks unmapped. A one-time patch
+  (`patches/v0_2/normalize_purchase_item_mapping_keys.py`) normalizes existing
+  `Purchase Item Mapping` rows and merges any that become identical after
+  normalization. Genuinely different wording (e.g. a date range or IP address that
+  changes every month) still needs mapping once per distinct wording - this is
+  whitespace/case normalization only, not fuzzy matching.
 - TDS now uses ERPNext's own `Tax Withholding Category` doctype instead of a custom
   one, and invoice creation picks between two mechanisms per supplier:
   - **Native**: if the Supplier has a Tax Withholding Category and isn't flagged

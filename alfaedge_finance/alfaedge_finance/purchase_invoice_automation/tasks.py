@@ -14,6 +14,9 @@ from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_reso
 	get_tds_from_supplier,
 	resolve_by_gst,
 )
+from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.text_normalization import (
+	normalize_for_matching,
+)
 
 ITEM_NAME_MAX_LENGTH = 140
 
@@ -131,7 +134,9 @@ def _apply_extraction(doc, parsed: dict):
 		full_text = item.get("item_name") or ""
 		truncated = full_text[:ITEM_NAME_MAX_LENGTH]
 		mapped_item = frappe.db.get_value(
-			"Purchase Item Mapping", {"supplier_item_description": truncated}, "mapped_item"
+			"Purchase Item Mapping",
+			{"supplier_item_description": normalize_for_matching(truncated)},
+			"mapped_item",
 		)
 
 		doc.append(
