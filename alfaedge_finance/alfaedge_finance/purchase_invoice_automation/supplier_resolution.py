@@ -6,6 +6,7 @@ supplier row.
 """
 
 import frappe
+from frappe.utils import getdate
 
 
 def resolve_by_gst(gst_number: str | None) -> str | None:
@@ -13,6 +14,39 @@ def resolve_by_gst(gst_number: str | None) -> str | None:
 	if not gst_number:
 		return None
 	return frappe.db.get_value("Supplier", {"gstin": gst_number}, "name")
+
+
+def get_tds_from_supplier(supplier: str, company: str, reference_date=None) -> dict | None:
+	"""If the matched Supplier has a Tax Withholding Category set, resolve it to a
+	{rate, account} pair the same way ERPNext's own automatic TDS would - the
+	currently-effective rate (by reference_date) and this company's configured
+	account. Returns None if the supplier has no category, or nothing in it applies
+	yet (no dated rate, no account for this company).
+	"""
+	category = frappe.db.get_value("Supplier", supplier, "tax_withholding_category")
+	if not category:
+		return None
+
+	reference_date = getdate(reference_date) if reference_date else getdate()
+	category_doc = frappe.get_cached_doc("Tax Withholding Category", category)
+
+	rate = None
+	for row in category_doc.rates:
+		if row.from_date and row.to_date and getdate(row.from_date) <= reference_date <= getdate(row.to_date):
+			rate = row.tax_withholding_rate
+			break
+	if rate is None:
+		return None
+
+	account = None
+	for row in category_doc.accounts:
+		if row.company == company:
+			account = row.account
+			break
+	if not account:
+		return None
+
+	return {"category": category, "rate": rate, "account": account}
 
 
 def _safe_gstin(gst_number: str | None) -> str | None:

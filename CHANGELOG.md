@@ -7,6 +7,12 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- TDS is now also auto-detected from an Existing Supplier's `Tax Withholding Category`
+  (rate + this company's configured account) when the invoice itself doesn't state a
+  deduction - covers suppliers whose per-invoice amount never crosses ERPNext's own
+  automatic-TDS threshold. Invoice-stated TDS still takes priority when both apply.
+
 ### Fixed
 - A cancelled Purchase Invoice could not be deleted because its source Purchase
   Expense Center still linked to it, and vice versa - a mutual link deadlock. Deleting

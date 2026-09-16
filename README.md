@@ -138,15 +138,26 @@ for this:
 
 - `is_tds_applicable`, `tds_category` (Link → `TDS Category`), `tds_rate`, `tds_account`,
   `tds_amount`.
-- **Auto-detected**: if the supplier's own invoice explicitly states a TDS deduction
-  (e.g. "Less: TDS @ 2%"), extraction fills `is_tds_applicable`, `tds_rate`, `tds_amount`,
-  and `tds_account` (from the Settings' Default TDS Account) automatically - Bifrost is
-  told not to invent a TDS figure that isn't printed.
-- **Manual fallback** (the common case for OVH-style suppliers, since their invoices
-  don't print the TDS breakdown): the reviewer picks a `TDS Category` from the list -
-  selecting one auto-fills the rate, account, and computes the amount as
-  `extracted_taxable_amount × rate` (TDS is calculated on the pre-GST taxable amount, not
-  the GST-inclusive total).
+- **Auto-detected from the invoice**: if the supplier's own invoice explicitly states a
+  TDS deduction (e.g. "Less: TDS @ 2%"), extraction fills `is_tds_applicable`,
+  `tds_rate`, `tds_amount`, and `tds_account` (from the Settings' Default TDS Account)
+  automatically - Bifrost is told not to invent a TDS figure that isn't printed. This
+  takes priority over the Supplier default below when both are present.
+- **Auto-detected from the Supplier master**: if the invoice itself doesn't state a
+  deduction but the matched Existing Supplier has a `Tax Withholding Category` set
+  (ERPNext's own field), that category's currently-effective rate and this company's
+  configured account are pulled in automatically - the same lookup ERPNext's own
+  automatic TDS uses (`tax_withholding_category.get_tax_withholding_rates`), just run
+  proactively instead of waiting for a cumulative threshold to be crossed. This is what
+  covers OVH-style suppliers whose per-invoice amount never reaches ERPNext's own
+  automatic threshold. `tds_category` (our own doctype) is left blank in this case,
+  since the source was the Supplier's Tax Withholding Category, not a manually-picked
+  one. Also re-runs client-side whenever the reviewer changes `existing_supplier` by
+  hand on the form.
+- **Manual fallback** (when neither of the above applies): the reviewer picks a
+  `TDS Category` from the list - selecting one auto-fills the rate, account, and
+  computes the amount as `extracted_taxable_amount × rate` (TDS is calculated on the
+  pre-GST taxable amount, not the GST-inclusive total).
 - At invoice creation, this becomes a `charge_type = "Actual"`, `category = "Total"`,
   `add_deduct_tax = "Deduct"` row on the Purchase Invoice - the same shape ERPNext's own
   automatic TDS uses - reducing the amount payable to the supplier while posting the

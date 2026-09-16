@@ -10,7 +10,10 @@ from alfaedge_finance.alfaedge_finance.doctype.purchase_invoice_automation_setti
 	get_settings,
 )
 from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.extraction import extract_invoice_data
-from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_resolution import resolve_by_gst
+from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_resolution import (
+	get_tds_from_supplier,
+	resolve_by_gst,
+)
 
 ITEM_NAME_MAX_LENGTH = 140
 
@@ -167,12 +170,26 @@ def _apply_extraction(doc, parsed: dict):
 	tds_rate = parsed.get("tds_rate")
 	tds_amount = parsed.get("tds_amount")
 	if tds_rate or tds_amount:
+		# The invoice itself states a TDS deduction - trust that over any generic
+		# default configured on the Supplier master.
 		doc.is_tds_applicable = 1
 		doc.tds_rate = float(tds_rate or 0) or None
 		doc.tds_amount = float(tds_amount or 0) or None
 		doc.tds_account = settings["default_tds_account"]
+	elif doc.supplier_type == "Existing" and doc.existing_supplier:
+		# No TDS printed on the invoice - fall back to the Supplier's own Tax
+		# Withholding Category, if one is configured (mirrors ERPNext's own
+		# automatic TDS, for suppliers whose per-invoice amount never crosses the
+		# threshold that would otherwise trigger it).
+		tds = get_tds_from_supplier(doc.existing_supplier, settings["company"], doc.supplier_invoice_date)
+		if tds:
+			doc.is_tds_applicable = 1
+			doc.tds_rate = tds["rate"]
+			doc.tds_account = tds["account"]
+			if doc.extracted_taxable_amount:
+				doc.tds_amount = round(doc.extracted_taxable_amount * tds["rate"] / 100, 2)
 	# else: leave TDS fields untouched - the reviewer picks a TDS Category by hand
-	# when the invoice itself doesn't state a deduction (most invoices, per design).
+	# when neither the invoice nor the Supplier master states a deduction.
 
 
 def _flag_duplicates(doc):

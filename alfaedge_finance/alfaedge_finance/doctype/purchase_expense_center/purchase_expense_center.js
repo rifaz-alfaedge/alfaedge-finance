@@ -48,6 +48,35 @@ frappe.ui.form.on("Purchase Expense Center", {
 		}
 	},
 
+	existing_supplier(frm) {
+		if (!frm.doc.existing_supplier) return;
+
+		frappe.call({
+			method: "alfaedge_finance.alfaedge_finance.doctype.purchase_expense_center.purchase_expense_center.get_supplier_tds",
+			args: { supplier: frm.doc.existing_supplier, posting_date: frm.doc.supplier_invoice_date },
+			callback(r) {
+				const tds = r.message;
+				if (!tds) return;
+
+				frm.set_value("is_tds_applicable", 1);
+				frm.set_value("tds_rate", tds.rate);
+				if (!frm.doc.tds_account) {
+					frm.set_value("tds_account", tds.account);
+				}
+				if (frm.doc.extracted_taxable_amount) {
+					frm.set_value(
+						"tds_amount",
+						flt((frm.doc.extracted_taxable_amount * tds.rate) / 100, precision("tds_amount", frm.doc))
+					);
+				}
+				frappe.show_alert({
+					message: __("TDS Category {0} found on this Supplier - TDS fields pre-filled.", [tds.category]),
+					indicator: "blue",
+				});
+			},
+		});
+	},
+
 	tds_category(frm) {
 		if (!frm.doc.tds_category) return;
 

@@ -13,6 +13,23 @@ class PurchaseExpenseCenter(Document):
 
 
 @frappe.whitelist()
+def get_supplier_tds(supplier, posting_date=None):
+	"""Used by the form JS when a reviewer picks/changes the Existing Supplier by
+	hand, so a Tax Withholding Category configured on that Supplier gets reflected
+	the same way it would from automatic extraction.
+	"""
+	from alfaedge_finance.alfaedge_finance.doctype.purchase_invoice_automation_settings.purchase_invoice_automation_settings import (
+		get_settings,
+	)
+	from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_resolution import (
+		get_tds_from_supplier,
+	)
+
+	settings = get_settings()
+	return get_tds_from_supplier(supplier, settings["company"], posting_date)
+
+
+@frappe.whitelist()
 def create_purchase_invoice(expense_center):
 	from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.invoice_creation import (
 		create_purchase_invoice_from_expense_center,
