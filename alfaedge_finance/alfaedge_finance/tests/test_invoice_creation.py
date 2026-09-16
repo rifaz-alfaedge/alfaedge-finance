@@ -69,6 +69,7 @@ class TestInvoiceCreation(FrappeTestCase):
 				"existing_supplier": self.supplier.name,
 				"supplier_gst": TEST_GSTIN,
 				"supplier_invoice_number": frappe.generate_hash(length=8),
+				"supplier_invoice_date": "2026-01-15",
 				"extracted_grand_total": 118 if with_tax else 100,
 			}
 		)
@@ -127,9 +128,10 @@ class TestInvoiceCreation(FrappeTestCase):
 		self.assertIsNone(result["warning"])
 
 		doc.reload()
-		self.assertEqual(doc.invoice_status, "Invoice Created")
+		self.assertEqual(doc.invoice_status, "Invoice Draft")
 		self.assertEqual(doc.purchase_invoice, pi.name)
 		self.assertEqual(pi.purchase_expense_center, doc.name)
+		self.assertEqual(pi.posting_date, doc.supplier_invoice_date)
 
 	def test_source_pdf_is_attached_to_the_invoice_too(self):
 		doc = self._make_expense_center(with_tax=False)
@@ -170,6 +172,21 @@ class TestInvoiceCreation(FrappeTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			create_purchase_invoice_from_expense_center(doc.name)
+
+	def test_invoice_status_tracks_submit_and_cancel(self):
+		doc = self._make_expense_center(with_tax=False)
+		result = create_purchase_invoice_from_expense_center(doc.name)
+		doc.reload()
+		self.assertEqual(doc.invoice_status, "Invoice Draft")
+
+		pi = frappe.get_doc("Purchase Invoice", result["purchase_invoice"])
+		pi.submit()
+		doc.reload()
+		self.assertEqual(doc.invoice_status, "Invoice Submitted")
+
+		pi.cancel()
+		doc.reload()
+		self.assertEqual(doc.invoice_status, "Invoice Draft")
 
 	def test_blocks_when_tds_applicable_but_unmapped(self):
 		doc = self._make_expense_center(with_tax=False)

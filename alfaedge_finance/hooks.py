@@ -137,13 +137,12 @@ doctype_list_js = {"Purchase Expense Center": "public/js/purchase_expense_center
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Purchase Invoice": {
+		"on_submit": "alfaedge_finance.alfaedge_finance.purchase_invoice_automation.invoice_creation.sync_invoice_status",
+		"on_cancel": "alfaedge_finance.alfaedge_finance.purchase_invoice_automation.invoice_creation.sync_invoice_status",
+	},
+}
 
 # Scheduled Tasks
 # ---------------

@@ -10,9 +10,10 @@ work, while keeping a human in the loop for every review and submission decision
 
 ### Flow
 
-1. A supplier emails a PDF invoice to `invoices@finance.alfaedge.org`.
-2. A Cloudflare Email Worker parses the MIME message and POSTs the PDF + email metadata
-   to this app's webhook.
+1. A supplier emails a PDF invoice to `purchase@codedynamic.org` (production) or
+   `test@codedynamic.org` (dev/testing).
+2. A Cloudflare Email Worker (`alfaedge-invoice-email-worker` / `-dev`) parses the MIME
+   message and POSTs the PDF + email metadata to the matching site's webhook.
 3. The webhook creates a `Purchase Expense Center` record (`status = Pending`) and
    enqueues a background job - it does not wait for extraction, so the Worker gets a
    fast response.
@@ -23,8 +24,11 @@ work, while keeping a human in the loop for every review and submission decision
 5. A reviewer opens the record, maps any remaining line items to internal `Item`s and
    any remaining tax rows to ledger `Account`s (once per unique description/tax type -
    reused automatically on future invoices), then clicks **Create Invoice**.
-6. A **Draft** `Purchase Invoice` is created. This app never submits an invoice - that
-   remains a manual step for the reviewer.
+6. A **Draft** `Purchase Invoice` is created, dated to the supplier's own invoice date
+   (`posting_date` = `supplier_invoice_date`). This app never submits an invoice - that
+   remains a manual step for the reviewer. `invoice_status` on the source record tracks
+   the invoice's actual state (`Invoice Draft` / `Invoice Submitted`), kept in sync
+   automatically whenever the Purchase Invoice is submitted or cancelled.
 
 PDFs can also be ingested without email, directly from Desk: a **"New from PDF"** button
 on the `Purchase Expense Center` list view accepts one or more PDFs at once (drag-and-

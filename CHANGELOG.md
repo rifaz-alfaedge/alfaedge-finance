@@ -10,6 +10,13 @@ and this project uses [Semantic Versioning](https://semver.org/).
 ### Added
 - Contributors listed in `pyproject.toml` (`authors`).
 
+### Changed
+- Draft Purchase Invoice `posting_date` is now set to the supplier's own invoice date
+  (previously left at today's date).
+- `Purchase Expense Center.invoice_status` now tracks the actual Purchase Invoice state
+  (`Invoice Draft` / `Invoice Submitted`) instead of a one-shot `Invoice Created`, kept
+  in sync automatically when the invoice is submitted or cancelled.
+
 ## [0.1.0] - 2026-09-16
 
 ### Added

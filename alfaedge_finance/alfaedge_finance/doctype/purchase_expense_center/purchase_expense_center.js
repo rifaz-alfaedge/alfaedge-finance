@@ -1,6 +1,6 @@
 frappe.ui.form.on("Purchase Expense Center", {
 	refresh(frm) {
-		if (frm.doc.invoice_status === "Invoice Created" && frm.doc.purchase_invoice) {
+		if (frm.doc.purchase_invoice) {
 			frm.add_custom_button(__("View Invoice"), () => {
 				frappe.set_route("Form", "Purchase Invoice", frm.doc.purchase_invoice);
 			});
