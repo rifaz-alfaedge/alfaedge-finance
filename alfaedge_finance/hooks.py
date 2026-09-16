@@ -141,6 +141,7 @@ doc_events = {
 	"Purchase Invoice": {
 		"on_submit": "alfaedge_finance.alfaedge_finance.purchase_invoice_automation.invoice_creation.sync_invoice_status",
 		"on_cancel": "alfaedge_finance.alfaedge_finance.purchase_invoice_automation.invoice_creation.sync_invoice_status",
+		"on_trash": "alfaedge_finance.alfaedge_finance.purchase_invoice_automation.invoice_creation.unlink_from_expense_center",
 	},
 }
 
@@ -190,8 +191,16 @@ doc_events = {
 
 # Ignore links to specified DocTypes when deleting documents
 # -----------------------------------------------------------
+# A cancelled Purchase Invoice should be deletable even though a Purchase Expense
+# Center still points to it (invoice_creation.unlink_from_expense_center clears that
+# reference via on_trash) - the reverse direction (deleting a Purchase Expense Center
+# while a Purchase Invoice still links to it) is intentionally NOT exempted here and
+# stays blocked. Note this hook is doctype-wide: it also means deleting a Supplier/
+# Item/Account still referenced by an unmapped Purchase Expense Center row would no
+# longer be blocked on that account either - an acceptable trade-off since master data
+# like that is meant to be disabled, not deleted (Frappe nudges towards that itself).
 
-# ignore_links_on_delete = ["Communication", "ToDo"]
+ignore_links_on_delete = ["Purchase Expense Center"]
 
 # Request Events
 # ----------------

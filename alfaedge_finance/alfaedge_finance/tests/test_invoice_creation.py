@@ -188,6 +188,31 @@ class TestInvoiceCreation(FrappeTestCase):
 		doc.reload()
 		self.assertEqual(doc.invoice_status, "Invoice Draft")
 
+	def test_deleting_cancelled_invoice_unlinks_and_reopens_expense_center(self):
+		doc = self._make_expense_center(with_tax=False)
+		result = create_purchase_invoice_from_expense_center(doc.name)
+
+		pi = frappe.get_doc("Purchase Invoice", result["purchase_invoice"])
+		pi.submit()
+		pi.cancel()
+
+		frappe.delete_doc("Purchase Invoice", pi.name, ignore_permissions=True)
+
+		doc.reload()
+		self.assertIsNone(doc.purchase_invoice)
+		self.assertEqual(doc.invoice_status, "Pending Review")
+
+		# Create Invoice is available again now that the link is cleared.
+		result2 = create_purchase_invoice_from_expense_center(doc.name)
+		self.assertTrue(frappe.db.exists("Purchase Invoice", result2["purchase_invoice"]))
+
+	def test_deleting_expense_center_blocked_while_invoice_linked(self):
+		doc = self._make_expense_center(with_tax=False)
+		create_purchase_invoice_from_expense_center(doc.name)
+
+		with self.assertRaises(frappe.LinkExistsError):
+			frappe.delete_doc("Purchase Expense Center", doc.name, ignore_permissions=True)
+
 	def test_blocks_when_tds_applicable_but_unmapped(self):
 		doc = self._make_expense_center(with_tax=False)
 		doc.is_tds_applicable = 1

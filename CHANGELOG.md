@@ -7,6 +7,14 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- A cancelled Purchase Invoice could not be deleted because its source Purchase
+  Expense Center still linked to it, and vice versa - a mutual link deadlock. Deleting
+  the Purchase Invoice now always succeeds and clears the link, resetting the source
+  record's `invoice_status` back to `Pending Review` so "Create Invoice" reappears.
+  Deleting a Purchase Expense Center while a Purchase Invoice still links to it remains
+  blocked, as intended.
+
 ## [0.2.0] - 2026-09-16
 
 ### Added

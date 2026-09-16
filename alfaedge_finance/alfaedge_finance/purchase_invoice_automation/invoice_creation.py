@@ -174,3 +174,23 @@ def sync_invoice_status(purchase_invoice_doc, method=None):
 
 	new_status = "Invoice Submitted" if purchase_invoice_doc.docstatus == 1 else "Invoice Draft"
 	frappe.db.set_value("Purchase Expense Center", expense_center, "invoice_status", new_status)
+
+
+def unlink_from_expense_center(purchase_invoice_doc, method=None):
+	"""Break the back-reference when a Purchase Invoice is deleted, so the source
+	Purchase Expense Center goes back to "Pending Review" and can create a new
+	invoice - called via doc_events on Purchase Invoice on_trash.
+
+	Deleting the Purchase Invoice itself is allowed even while this link exists
+	(see hooks.py's ignore_links_on_delete) - it's deleting the Purchase Expense
+	Center while a Purchase Invoice still links to it that stays blocked.
+	"""
+	expense_center = purchase_invoice_doc.get("purchase_expense_center")
+	if not expense_center or not frappe.db.exists("Purchase Expense Center", expense_center):
+		return
+
+	frappe.db.set_value(
+		"Purchase Expense Center",
+		expense_center,
+		{"purchase_invoice": None, "invoice_status": "Pending Review"},
+	)
