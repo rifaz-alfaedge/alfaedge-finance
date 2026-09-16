@@ -164,6 +164,12 @@ match / no GSTIN), and Purchase Invoice creation (blocked on missing item/tax ma
 draft-only creation, tax rows, grand-total tolerance warning, refusing to double-create
 an invoice).
 
+### Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a version history. Every user-facing change
+(feature, fix, or behavior change) gets an entry there - add one as part of the same
+change, not as an afterthought.
+
 ### Installation
 
 You can install this app using the [bench](https://github.com/frappe/bench) CLI:
