@@ -8,6 +8,14 @@ and this project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Supplier matching now falls back to an exact, case/whitespace-insensitive match on
+  `Supplier.supplier_name` when GSTIN-based matching finds nothing - covers overseas
+  suppliers (no GSTIN at all) and cases where the LLM mislabels some other identifier
+  as `gst_number`. A structural GSTIN-shape check (`looks_like_gstin`) now rejects
+  anything that isn't actually a 15-character Indian GSTIN before it's stored or
+  matched against (confirmed live: an overseas invoice produced `9924USA29003OSI` as
+  `gst_number`, which isn't a GSTIN). New-supplier creation also now captures and uses
+  the extracted `country` instead of always defaulting the Address to India.
 - **Alfaedge Finance workspace** in the Desk sidebar, with shortcuts and link cards to
   `Purchase Expense Center`, `Purchase Item Mapping`, `Tax Account Mapping`, and
   `Purchase Invoice Automation Settings` - so mappings can be viewed and managed

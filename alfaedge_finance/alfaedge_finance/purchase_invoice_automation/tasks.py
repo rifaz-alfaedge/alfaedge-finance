@@ -12,7 +12,9 @@ from alfaedge_finance.alfaedge_finance.doctype.purchase_invoice_automation_setti
 from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.extraction import extract_invoice_data
 from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_resolution import (
 	get_tds_from_supplier,
+	looks_like_gstin,
 	resolve_by_gst,
+	resolve_by_name,
 )
 from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.text_normalization import (
 	normalize_for_matching,
@@ -103,11 +105,18 @@ def process_expense_center(expense_center: str):
 
 def _apply_extraction(doc, parsed: dict):
 	gst_number = (parsed.get("gst_number") or "").strip().upper() or None
+	if gst_number and not looks_like_gstin(gst_number):
+		# Not a real GSTIN shape - an overseas supplier has none at all, and the
+		# model occasionally mislabels some other identifier (EIN, VAT number)
+		# as gst_number despite being told not to. Treat as absent rather than
+		# storing a bogus value in supplier_gst.
+		gst_number = None
+
 	doc.supplier_invoice_date = parsed.get("invoice_date") or None
 	doc.supplier_invoice_number = parsed.get("invoice_number") or ""
 	doc.supplier_gst = gst_number or ""
 
-	existing_supplier = resolve_by_gst(gst_number)
+	existing_supplier = resolve_by_gst(gst_number) or resolve_by_name(parsed.get("supplier_name"))
 	if existing_supplier:
 		doc.supplier_type = "Existing"
 		doc.existing_supplier = existing_supplier
@@ -118,6 +127,7 @@ def _apply_extraction(doc, parsed: dict):
 		doc.city = parsed.get("city") or ""
 		doc.state = parsed.get("state") or ""
 		doc.postal_code = parsed.get("postal_code") or ""
+		doc.country = parsed.get("country") or "India"
 
 	settings = get_settings()
 	doc.items = []

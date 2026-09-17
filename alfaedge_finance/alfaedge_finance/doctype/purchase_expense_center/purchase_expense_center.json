@@ -30,6 +30,7 @@
   "city",
   "state",
   "postal_code",
+  "country",
   "section_break_items",
   "items",
   "section_break_taxes",
@@ -196,6 +197,14 @@
    "fieldname": "postal_code",
    "fieldtype": "Data",
    "label": "Postal Code"
+  },
+  {
+   "default": "India",
+   "depends_on": "eval:doc.supplier_type=='New'",
+   "fieldname": "country",
+   "fieldtype": "Link",
+   "label": "Country",
+   "options": "Country"
   },
   {
    "fieldname": "section_break_items",

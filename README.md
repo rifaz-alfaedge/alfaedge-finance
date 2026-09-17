@@ -18,9 +18,11 @@ work, while keeping a human in the loop for every review and submission decision
    enqueues a background job - it does not wait for extraction, so the Worker gets a
    fast response.
 4. The background job calls Bifrost (a self-hosted OpenAI-compatible LLM gateway) to
-   extract supplier, line items, and tax breakdown from the PDF, matches the supplier by
-   GSTIN, and pre-fills any item/tax mappings already known from prior invoices.
-   `status` becomes `Extracted` (or `Failed`, with a reason, if anything goes wrong).
+   extract supplier, line items, and tax breakdown from the PDF, matches the supplier
+   (by GSTIN first, falling back to an exact supplier-name match when there's no usable
+   GSTIN - see [Supplier matching](#supplier-matching) below), and pre-fills any
+   item/tax mappings already known from prior invoices. `status` becomes `Extracted`
+   (or `Failed`, with a reason, if anything goes wrong).
 5. A reviewer opens the record, maps any remaining line items to internal `Item`s and
    any remaining tax rows to ledger `Account`s (once per unique description/tax type -
    reused automatically on future invoices), then clicks **Create Invoice**.
@@ -33,6 +35,26 @@ work, while keeping a human in the loop for every review and submission decision
 PDFs can also be ingested without email, directly from Desk: a **"New from PDF"** button
 on the `Purchase Expense Center` list view accepts one or more PDFs at once (drag-and-
 drop is not required - it's a plain file picker) and feeds the exact same pipeline.
+
+### Supplier matching
+
+1. **By GSTIN** (`resolve_by_gst`): exact match against `Supplier.gstin`. The extracted
+   `gst_number` is first checked against the actual 15-character Indian GSTIN shape
+   (`looks_like_gstin`) - an overseas supplier has none at all, and the LLM has been
+   caught mislabeling some other identifier (an EIN, in one real case) as `gst_number`
+   despite being told not to; either way, anything that isn't GSTIN-shaped is treated as
+   absent rather than stored or matched against.
+2. **By name** (`resolve_by_name`), when GSTIN-based matching finds nothing: an exact,
+   case/whitespace-insensitive match against `Supplier.supplier_name`. This is what
+   catches an already-known overseas supplier (no GSTIN to match on at all) or a
+   domestic one whose GST number the LLM got wrong. Deliberately not fuzzy - a near-miss
+   is routed to manual review as a New supplier rather than risking a link to the wrong
+   one.
+3. **New supplier**: if neither matches, the record is flagged `New` for manual review,
+   with `address`/`city`/`state`/`postal_code`/`country` filled from extraction
+   (`country` defaults to India if extraction doesn't return one). Both checks re-run at
+   invoice-creation time too (`_resolve_supplier`), in case the real Supplier was created
+   or corrected in the meantime.
 
 ### DocTypes
 
@@ -203,10 +225,11 @@ bench --site erp.alfaedge.org set-config allow_tests true   # first time only
 bench --site erp.alfaedge.org run-tests --app alfaedge_finance
 ```
 
-Covers: Bifrost markdown-fence stripping, GST-based supplier matching (match / no
-match / no GSTIN), and Purchase Invoice creation (blocked on missing item/tax mapping,
-draft-only creation, tax rows, grand-total tolerance warning, refusing to double-create
-an invoice).
+Covers: Bifrost markdown-fence stripping, GST- and name-based supplier matching (match /
+no match / no GSTIN / GSTIN-shaped garbage rejected), TDS (native `apply_tds` vs. manual
+override, Supplier category sync), item/tax mapping normalization, and Purchase Invoice
+creation (blocked on missing item/tax mapping, draft-only creation, tax rows, grand-total
+tolerance warning, refusing to double-create an invoice, delete/unlink behavior).
 
 ### Changelog
 

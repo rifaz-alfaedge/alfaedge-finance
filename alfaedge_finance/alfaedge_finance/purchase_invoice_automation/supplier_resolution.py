@@ -1,12 +1,30 @@
-"""GST-based supplier matching and new-supplier creation.
+"""GST-based (and, as a fallback, name-based) supplier matching, and new-supplier
+creation.
 
-GSTIN is the unique identifier. An invoice with no GSTIN, or one that doesn't match
-any existing Supplier, is not an error - it's routed to manual review as a "New"
-supplier row.
+GSTIN is the primary identifier. An overseas supplier has none at all, and an LLM
+occasionally mislabels some other identifier (EIN, VAT number) as gst_number despite
+being told not to - either way, when GST-based matching comes up empty, falling back to
+an exact match on the supplier's name catches the common case (a known supplier with no
+GSTIN, or a garbled one) without the false-positive risk of fuzzy matching. Only when
+neither matches is it routed to manual review as a "New" supplier row.
 """
+
+import re
 
 import frappe
 from frappe.utils import getdate
+
+_GSTIN_SHAPE_RE = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]{3}$")
+
+
+def looks_like_gstin(value: str | None) -> bool:
+	"""Structural check only (2-digit state code + 10-char PAN + 3 trailing
+	alphanumeric chars for entity code/checksum, 15 total) - not a checksum
+	validation. Used to catch an LLM mislabeling some other identifier (EIN, VAT
+	number) as gst_number, which resolve_by_gst would otherwise just fail to
+	match silently.
+	"""
+	return bool(value and _GSTIN_SHAPE_RE.match(value.strip().upper()))
 
 
 def resolve_by_gst(gst_number: str | None) -> str | None:
@@ -14,6 +32,22 @@ def resolve_by_gst(gst_number: str | None) -> str | None:
 	if not gst_number:
 		return None
 	return frappe.db.get_value("Supplier", {"gstin": gst_number}, "name")
+
+
+def resolve_by_name(supplier_name: str | None) -> str | None:
+	"""Fallback match for suppliers with no usable GSTIN (overseas, or an
+	extraction that mislabeled some other ID as gst_number) - an exact,
+	case/whitespace-insensitive match on Supplier.supplier_name. Deliberately not
+	fuzzy: a near-miss is routed to manual review as New rather than risking a
+	link to the wrong Supplier.
+	"""
+	if not supplier_name or not supplier_name.strip():
+		return None
+	result = frappe.db.sql(
+		"select name from tabSupplier where lower(supplier_name) = lower(%s) limit 1",
+		(supplier_name.strip(),),
+	)
+	return result[0][0] if result else None
 
 
 def resolve_tax_withholding_category(category: str, company: str, reference_date=None) -> dict | None:
@@ -147,7 +181,9 @@ def create_supplier_and_address(expense_center) -> str:
 					"city": expense_center.city or "",
 					"state": expense_center.state or "",
 					"pincode": expense_center.postal_code or "",
-					"country": "India",
+					"country": expense_center.country
+					if expense_center.country and frappe.db.exists("Country", expense_center.country)
+					else "India",
 					"links": [{"link_doctype": "Supplier", "link_name": supplier.name}],
 				}
 			)

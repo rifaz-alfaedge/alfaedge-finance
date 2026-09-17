@@ -27,6 +27,58 @@ class TestApplyExtraction(FrappeTestCase):
 		self.assertEqual(len(doc.items), 0)
 
 
+class TestApplyExtractionSupplierMatching(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		if not frappe.db.exists("Supplier", {"supplier_name": "PIA Overseas Test Co"}):
+			frappe.get_doc(
+				{
+					"doctype": "Supplier",
+					"supplier_name": "PIA Overseas Test Co",
+					"supplier_group": "All Supplier Groups",
+					"supplier_type": "Company",
+					"country": "United States",
+				}
+			).insert(ignore_permissions=True)
+
+	def test_falls_back_to_name_match_when_gst_number_is_not_a_real_gstin(self):
+		doc = frappe.get_doc({"doctype": "Purchase Expense Center", "source": "Manual Upload"})
+		parsed = {
+			"supplier_name": "PIA Overseas Test Co",
+			"gst_number": "9924USA29003OSI",  # the actual garbage seen in practice
+			"items": [],
+			"taxes": [],
+		}
+		_apply_extraction(doc, parsed)
+
+		self.assertEqual(doc.supplier_type, "Existing")
+		self.assertEqual(doc.existing_supplier, "PIA Overseas Test Co")
+		self.assertEqual(doc.supplier_gst, "")  # garbage dropped, not stored
+
+	def test_falls_back_to_name_match_when_gst_number_is_absent(self):
+		doc = frappe.get_doc({"doctype": "Purchase Expense Center", "source": "Manual Upload"})
+		parsed = {"supplier_name": "PIA Overseas Test Co", "gst_number": None, "items": [], "taxes": []}
+		_apply_extraction(doc, parsed)
+
+		self.assertEqual(doc.supplier_type, "Existing")
+		self.assertEqual(doc.existing_supplier, "PIA Overseas Test Co")
+
+	def test_new_supplier_captures_country(self):
+		doc = frappe.get_doc({"doctype": "Purchase Expense Center", "source": "Manual Upload"})
+		parsed = {
+			"supplier_name": "PIA Brand New Overseas Co",
+			"gst_number": None,
+			"country": "United States",
+			"items": [],
+			"taxes": [],
+		}
+		_apply_extraction(doc, parsed)
+
+		self.assertEqual(doc.supplier_type, "New")
+		self.assertEqual(doc.country, "United States")
+
+
 class TestApplyExtractionTds(FrappeTestCase):
 	COMPANY = "Code Dynamic Solutions Private Limited"
 	TDS_ACCOUNT = "TDS Payable - CDS"

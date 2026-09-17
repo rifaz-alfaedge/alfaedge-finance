@@ -22,6 +22,7 @@ Return ONLY a valid JSON object with these exact keys - no markdown, no commenta
   "city":            "City or null",
   "state":           "State or null",
   "postal_code":     "PIN / postal code or null",
+  "country":         "Supplier's country, full English name (e.g. 'India', 'United States') or null",
   "items": [
     { "item_name": "description", "qty": 0, "rate": 0.0, "amount": 0.0 }
   ],
@@ -35,7 +36,10 @@ Return ONLY a valid JSON object with these exact keys - no markdown, no commenta
 }
 
 Use null for missing strings and 0 for missing numbers.
-If no GSTIN is visible on the invoice, use null for gst_number - do not guess.
+"gst_number" must be a real 15-character Indian GSTIN and nothing else. If no GSTIN is
+visible on the invoice - including for any supplier based outside India, who will never
+have one - use null. Never substitute a different identifier (EIN, VAT number, tax ID,
+company registration number, etc.) for gst_number just because one is printed.
 "tax_type" must be one of CGST, SGST, IGST, or Other if it doesn't match those.
 "rate" is a plain number, e.g. 9 for 9%.
 "taxable_amount" is the pre-tax subtotal as printed on the invoice.

@@ -13,6 +13,7 @@ from alfaedge_finance.alfaedge_finance.doctype.purchase_invoice_automation_setti
 from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_resolution import (
 	create_supplier_and_address,
 	resolve_by_gst,
+	resolve_by_name,
 	supplier_uses_automatic_tds,
 )
 
@@ -42,12 +43,17 @@ def _validate_mappings(expense_center, use_native_tds):
 
 
 def _resolve_supplier(expense_center):
-	"""Re-check by GST (may have been created since extraction), else create it."""
+	"""Re-check by GST (may have been created since extraction), then by name,
+	else create a new Supplier.
+	"""
 	existing = resolve_by_gst(expense_center.supplier_gst)
 	if existing:
 		return existing
 	if expense_center.supplier_type == "Existing" and expense_center.existing_supplier:
 		return expense_center.existing_supplier
+	existing = resolve_by_name(expense_center.new_supplier)
+	if existing:
+		return existing
 	return create_supplier_and_address(expense_center)
 
 

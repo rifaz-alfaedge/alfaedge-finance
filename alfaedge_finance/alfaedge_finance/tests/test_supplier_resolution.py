@@ -3,7 +3,9 @@ from frappe.tests.utils import FrappeTestCase
 
 from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_resolution import (
 	get_tds_from_supplier,
+	looks_like_gstin,
 	resolve_by_gst,
+	resolve_by_name,
 )
 
 TEST_GSTIN = "29AABCF8078M1C8"
@@ -35,6 +37,48 @@ class TestSupplierResolution(FrappeTestCase):
 	def test_no_gstin_is_not_an_error(self):
 		self.assertIsNone(resolve_by_gst(None))
 		self.assertIsNone(resolve_by_gst(""))
+
+
+class TestResolveByName(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		if not frappe.db.exists("Supplier", {"supplier_name": "Anthropic Test Co"}):
+			frappe.get_doc(
+				{
+					"doctype": "Supplier",
+					"supplier_name": "Anthropic Test Co",
+					"supplier_group": "All Supplier Groups",
+					"supplier_type": "Company",
+				}
+			).insert(ignore_permissions=True)
+
+	def test_exact_name_match(self):
+		self.assertEqual(resolve_by_name("Anthropic Test Co"), "Anthropic Test Co")
+
+	def test_name_match_ignores_case_and_surrounding_whitespace(self):
+		self.assertEqual(resolve_by_name("  anthropic TEST co  "), "Anthropic Test Co")
+
+	def test_no_match_for_unrelated_name(self):
+		self.assertIsNone(resolve_by_name("Some Unrelated Supplier Inc"))
+
+	def test_no_name_is_not_an_error(self):
+		self.assertIsNone(resolve_by_name(None))
+		self.assertIsNone(resolve_by_name(""))
+		self.assertIsNone(resolve_by_name("   "))
+
+
+class TestLooksLikeGstin(FrappeTestCase):
+	def test_valid_shape(self):
+		self.assertTrue(looks_like_gstin("29AABCF8078M1C8"))
+
+	def test_rejects_overseas_style_identifier(self):
+		# The actual garbage an LLM produced for an overseas supplier in practice.
+		self.assertFalse(looks_like_gstin("9924USA29003OSI"))
+
+	def test_rejects_none_and_blank(self):
+		self.assertFalse(looks_like_gstin(None))
+		self.assertFalse(looks_like_gstin(""))
 
 
 class TestTdsFromSupplier(FrappeTestCase):
