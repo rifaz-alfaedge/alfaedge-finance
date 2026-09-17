@@ -141,6 +141,14 @@ def _apply_extraction(doc, parsed: dict):
 		doc.country = parsed.get("country") or "India"
 
 	settings = get_settings()
+
+	currency = (parsed.get("currency") or "").strip().upper()
+	if not currency or not frappe.db.exists("Currency", currency):
+		# Not extracted, or not a real currency code - fall back to the
+		# Company's own default rather than leaving the field blank.
+		currency = frappe.db.get_value("Company", settings["company"], "default_currency")
+	doc.currency = currency
+
 	doc.items = []
 	for item in parsed.get("items") or []:
 		qty = float(item.get("qty") or 0)

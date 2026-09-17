@@ -22,6 +22,7 @@
   "supplier_invoice_date",
   "supplier_invoice_number",
   "supplier_gst",
+  "currency",
   "supplier_type",
   "column_break_supplier",
   "existing_supplier",
@@ -148,6 +149,14 @@
    "fieldname": "supplier_gst",
    "fieldtype": "Data",
    "label": "Supplier GST"
+  },
+  {
+   "description": "Currency the invoice is billed in, as extracted - not necessarily the Company's default currency.",
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Currency",
+   "options": "Currency"
   },
   {
    "default": "New",

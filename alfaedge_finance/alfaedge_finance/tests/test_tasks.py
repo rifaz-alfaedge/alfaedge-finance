@@ -4,6 +4,23 @@ from frappe.tests.utils import FrappeTestCase
 from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.tasks import _apply_extraction
 
 
+class TestApplyExtractionCurrency(FrappeTestCase):
+	def test_uses_extracted_currency_when_valid(self):
+		doc = frappe.get_doc({"doctype": "Purchase Expense Center", "source": "Manual Upload"})
+		_apply_extraction(doc, {"currency": "USD", "items": [], "taxes": []})
+		self.assertEqual(doc.currency, "USD")
+
+	def test_falls_back_to_company_currency_when_not_extracted(self):
+		doc = frappe.get_doc({"doctype": "Purchase Expense Center", "source": "Manual Upload"})
+		_apply_extraction(doc, {"currency": None, "items": [], "taxes": []})
+		self.assertEqual(doc.currency, "INR")  # Code Dynamic Solutions Private Limited's default
+
+	def test_falls_back_to_company_currency_for_invalid_code(self):
+		doc = frappe.get_doc({"doctype": "Purchase Expense Center", "source": "Manual Upload"})
+		_apply_extraction(doc, {"currency": "NOT_A_CURRENCY", "items": [], "taxes": []})
+		self.assertEqual(doc.currency, "INR")
+
+
 class TestApplyExtraction(FrappeTestCase):
 	def test_skips_zero_amount_line_items(self):
 		doc = frappe.get_doc({"doctype": "Purchase Expense Center", "source": "Manual Upload"})

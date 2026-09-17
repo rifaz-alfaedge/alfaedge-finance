@@ -8,6 +8,17 @@ and this project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Multi-currency support.** `Purchase Expense Center` gets a `currency` field, set
+  from extraction (falling back to the Company's default currency). Invoice creation
+  sets `Purchase Invoice.currency` (the Supplier's own `default_currency` takes
+  priority when set - fixes `"Accounting Entry for Supplier: X can only be made in
+  currency: Y"`) and fetches a real `conversion_rate` via ERPNext's own exchange-rate
+  utility, blocking with a clear message if none can be found rather than posting at a
+  wrong/zero rate. Item rows no longer force `base_rate`/`base_amount` to mirror
+  `rate`/`amount`, letting ERPNext derive them correctly from the conversion rate.
+  Confirmed live end-to-end for a USD Anthropic invoice. Still requires the Supplier's
+  Payable account to itself be set up in that currency (a Chart of Accounts / Supplier
+  setup task, not something this app creates automatically).
 - Supplier matching now falls back to an exact, case/whitespace-insensitive match on
   `Supplier.supplier_name` when GSTIN-based matching finds nothing - covers overseas
   suppliers (no GSTIN at all) and cases where the LLM mislabels some other identifier

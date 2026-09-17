@@ -371,3 +371,117 @@ class TestInvoiceCreation(FrappeTestCase):
 		self.assertFalse(
 			frappe.db.get_value("Supplier", doc.existing_supplier, "tax_withholding_category")
 		)
+
+
+class TestMultiCurrencyInvoice(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+
+		if not frappe.db.exists("Item", TEST_ITEM):
+			frappe.get_doc(
+				{
+					"doctype": "Item",
+					"item_code": TEST_ITEM,
+					"item_name": TEST_ITEM,
+					"item_group": "All Item Groups",
+					"stock_uom": "Nos",
+					"is_stock_item": 0,
+					"gst_hsn_code": "998719",
+				}
+			).insert(ignore_permissions=True)
+
+		if not frappe.db.exists(
+			"Currency Exchange", {"from_currency": "USD", "to_currency": "INR", "date": "2026-01-15"}
+		):
+			frappe.get_doc(
+				{
+					"doctype": "Currency Exchange",
+					"date": "2026-01-15",
+					"from_currency": "USD",
+					"to_currency": "INR",
+					"exchange_rate": 90,
+					"for_buying": 1,
+				}
+			).insert(ignore_permissions=True)
+
+		# ERPNext also requires the Payable account itself to be denominated in
+		# the invoice's currency (a separate constraint from Supplier default
+		# currency/conversion_rate) - real multi-currency AP setup, not something
+		# this app should silently create in the Chart of Accounts, but a test
+		# needs one to exercise the full path.
+		if not frappe.db.exists("Account", "Creditors USD - CDS"):
+			frappe.get_doc(
+				{
+					"doctype": "Account",
+					"account_name": "Creditors USD",
+					"parent_account": "Accounts Payable - CDS",
+					"account_currency": "USD",
+					"account_type": "Payable",
+					"company": COMPANY,
+				}
+			).insert(ignore_permissions=True)
+
+		if not frappe.db.exists("Supplier", {"supplier_name": "PIA USD Supplier"}):
+			cls.usd_supplier = frappe.get_doc(
+				{
+					"doctype": "Supplier",
+					"supplier_name": "PIA USD Supplier",
+					"supplier_group": "All Supplier Groups",
+					"supplier_type": "Company",
+					"default_currency": "USD",
+					"accounts": [{"company": COMPANY, "account": "Creditors USD - CDS"}],
+				}
+			).insert(ignore_permissions=True)
+		else:
+			cls.usd_supplier = frappe.get_doc("Supplier", {"supplier_name": "PIA USD Supplier"})
+
+	def _make_usd_expense_center(self, currency, rate=100):
+		doc = frappe.get_doc(
+			{
+				"doctype": "Purchase Expense Center",
+				"source": "Manual Upload",
+				"status": "Extracted",
+				"supplier_type": "Existing",
+				"existing_supplier": self.usd_supplier.name,
+				"currency": currency,
+				"supplier_invoice_number": frappe.generate_hash(length=8),
+				"supplier_invoice_date": "2026-01-15",
+			}
+		)
+		doc.append(
+			"items",
+			{
+				"item_name": "Widget",
+				"description": "Widget",
+				"qty": 1,
+				"rate": rate,
+				"amount": rate,
+				"uom": "Nos",
+				"stock_qty": 1,
+				"base_rate": rate,
+				"base_amount": rate,
+				"mapped_item": TEST_ITEM,
+			},
+		)
+		doc.insert(ignore_permissions=True)
+		return doc
+
+	def test_creates_invoice_in_suppliers_currency_with_conversion_rate(self):
+		doc = self._make_usd_expense_center("USD", rate=100)
+		result = create_purchase_invoice_from_expense_center(doc.name)
+
+		pi = frappe.get_doc("Purchase Invoice", result["purchase_invoice"])
+		self.assertEqual(pi.currency, "USD")
+		self.assertEqual(pi.conversion_rate, 90)
+		self.assertEqual(pi.items[0].amount, 100)
+		self.assertEqual(pi.items[0].base_amount, 9000)  # 100 * 90, computed by core - not by us
+
+	def test_supplier_default_currency_overrides_extracted_currency(self):
+		# Extraction says INR, but the Supplier is pinned to USD - Supplier wins,
+		# which is exactly what avoids ERPNext's "can only be made in currency: X" error.
+		doc = self._make_usd_expense_center("INR", rate=50)
+		result = create_purchase_invoice_from_expense_center(doc.name)
+
+		pi = frappe.get_doc("Purchase Invoice", result["purchase_invoice"])
+		self.assertEqual(pi.currency, "USD")

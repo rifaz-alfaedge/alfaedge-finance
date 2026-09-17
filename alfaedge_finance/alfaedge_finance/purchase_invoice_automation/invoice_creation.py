@@ -21,6 +21,30 @@ from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_reso
 GRAND_TOTAL_TOLERANCE = 1.0
 
 
+def _get_conversion_rate(currency, company_currency, reference_date):
+	"""Real exchange rate to the Company's currency, mirroring what ERPNext's own
+	Purchase Invoice form fetches client-side when currency != company currency.
+	Checked first against any manually-recorded Currency Exchange rate, then an
+	auto-fetch from the configured external provider (see Currency Exchange
+	Settings) - blocks invoice creation rather than silently posting at a wrong
+	or zero rate if neither is available.
+	"""
+	if currency == company_currency:
+		return 1.0
+
+	from erpnext.setup.utils import get_exchange_rate
+
+	rate = get_exchange_rate(currency, company_currency, reference_date, args="for_buying")
+	if not rate:
+		frappe.throw(
+			_(
+				"Could not determine an exchange rate from {0} to {1}. Add one manually via "
+				"a Currency Exchange record, then try again."
+			).format(currency, company_currency)
+		)
+	return rate
+
+
 def _validate_mappings(expense_center, use_native_tds):
 	missing_items = [row.idx for row in expense_center.items if not row.mapped_item]
 	missing_taxes = [row.idx for row in expense_center.taxes if not row.mapped_account]
@@ -82,9 +106,22 @@ def create_purchase_invoice_from_expense_center(expense_center_name: str) -> dic
 
 	_validate_mappings(expense_center, use_native_tds)
 
+	company_currency = frappe.db.get_value("Company", settings["company"], "default_currency")
+	# A Supplier with its own default_currency set is a hard constraint in ERPNext
+	# (accounting entries for that party can only be made in that currency) - that
+	# takes priority over whatever currency this particular invoice extracted as,
+	# to avoid exactly the error this was built to prevent.
+	currency = (
+		frappe.db.get_value("Supplier", supplier, "default_currency")
+		or expense_center.currency
+		or company_currency
+	)
+
 	pi = frappe.new_doc("Purchase Invoice")
 	pi.company = settings["company"]
 	pi.supplier = supplier
+	pi.currency = currency
+	pi.conversion_rate = _get_conversion_rate(currency, company_currency, expense_center.supplier_invoice_date)
 	pi.bill_no = expense_center.supplier_invoice_number
 	pi.bill_date = expense_center.supplier_invoice_date
 	if expense_center.supplier_invoice_date:
@@ -105,8 +142,9 @@ def create_purchase_invoice_from_expense_center(expense_center_name: str) -> dic
 				"amount": row.amount,
 				"uom": row.uom,
 				"stock_qty": row.stock_qty or row.qty,
-				"base_rate": row.base_rate or row.rate,
-				"base_amount": row.base_amount or row.amount,
+				# base_rate/base_amount deliberately not set - calculate_taxes_and_totals()
+				# derives them from rate/amount * conversion_rate, which only equals
+				# rate/amount 1:1 when the invoice currency is the company currency.
 			},
 		)
 

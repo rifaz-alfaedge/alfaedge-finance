@@ -235,6 +235,37 @@ either path - it reads back whatever ERPNext actually deducted for the native ca
 (which may be less than expected, or nothing, depending on its own threshold logic)
 rather than trusting our own pre-computed estimate.
 
+### Multi-currency
+
+Every field before this assumed the Company's own currency (INR); overseas suppliers
+(billed in USD, etc.) need the real thing. `Purchase Expense Center` has a `currency`
+field, set from extraction (Bifrost is told to infer it from the invoice, never assume
+INR) and falling back to the Company's default currency if extraction doesn't return a
+real 3-letter code.
+
+At invoice creation:
+- **Currency**: the Supplier's own `default_currency` (if set) takes priority over the
+  extracted one - ERPNext hard-requires all of a Supplier's accounting entries to be in
+  one currency once that's set, so honouring it is what avoids the
+  `"Accounting Entry for Supplier: X can only be made in currency: Y"` error.
+- **Conversion rate**: fetched via ERPNext's own `erpnext.setup.utils.get_exchange_rate`
+  (checks a manually-recorded `Currency Exchange` rate first, then auto-fetches from the
+  configured external provider) for the invoice's posting date. Invoice creation blocks
+  with a clear message if no rate can be found, rather than posting at a wrong or zero
+  rate.
+- Item rows no longer force `base_rate`/`base_amount` to mirror `rate`/`amount` - those
+  are left for `calculate_taxes_and_totals()` to derive from `conversion_rate`, which
+  only equals rate/amount 1:1 when the invoice currency is the company's own.
+
+**This does not, by itself, set up multi-currency accounting** - ERPNext also requires
+the Supplier's Payable account (`credit_to`) to itself be denominated in that currency
+(a separate constraint from the two points above). That's a Chart of Accounts / Supplier
+setup task, not something this app creates automatically: create a currency-specific
+Payable account (e.g. "Creditors USD") under your Payables group, and add it to the
+Supplier's own **Accounts** table (`Supplier → Accounting tab → Default Accounts`) for
+your Company. Once that's done for a given Supplier, invoices from them in that currency
+work with no further setup.
+
 ### Running the tests
 
 ```bash
