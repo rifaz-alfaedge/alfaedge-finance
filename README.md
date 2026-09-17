@@ -44,17 +44,34 @@ drop is not required - it's a plain file picker) and feeds the exact same pipeli
    caught mislabeling some other identifier (an EIN, in one real case) as `gst_number`
    despite being told not to; either way, anything that isn't GSTIN-shaped is treated as
    absent rather than stored or matched against.
-2. **By name** (`resolve_by_name`), when GSTIN-based matching finds nothing: an exact,
-   case/whitespace-insensitive match against `Supplier.supplier_name`. This is what
-   catches an already-known overseas supplier (no GSTIN to match on at all) or a
-   domestic one whose GST number the LLM got wrong. Deliberately not fuzzy - a near-miss
-   is routed to manual review as a New supplier rather than risking a link to the wrong
-   one.
-3. **New supplier**: if neither matches, the record is flagged `New` for manual review,
-   with `address`/`city`/`state`/`postal_code`/`country` filled from extraction
-   (`country` defaults to India if extraction doesn't return one). Both checks re-run at
-   invoice-creation time too (`_resolve_supplier`), in case the real Supplier was created
-   or corrected in the meantime.
+2. **By exact name** (`resolve_by_name`), when GSTIN-based matching finds nothing: an
+   exact, case/whitespace-insensitive match against `Supplier.supplier_name`. This is
+   what catches an already-known overseas supplier (no GSTIN to match on at all) or a
+   domestic one whose GST number the LLM got wrong.
+3. **By normalized name + address** (`resolve_by_name_and_address`), when even that
+   finds nothing: the name is normalized further (punctuation stripped too, so
+   `"Anthropic, PBC"` and `"Anthropic PBC"` are the same) and matched against every
+   Supplier's own normalized name.
+   - A unique normalized-name match is trusted on its own.
+   - If more than one Supplier normalizes to the same name, only one whose linked
+     Address also agrees (exact pincode, or matching country+state) is trusted.
+   - If *no* Supplier's name matches even loosely, an exact pincode match is still
+     tried, but only for a Supplier whose name at least partially overlaps
+     (one normalized name contains the other) - a bare pincode match against a
+     completely unrelated name is never trusted (could be a different company at the
+     same address).
+   - Country/state/pincode come from `address`/`city`/`state`/`postal_code`/`country`
+     in the extraction.
+4. **New supplier**: if none of the above match, the record is flagged `New` for manual
+   review, with `address`/`city`/`state`/`postal_code`/`country` filled from extraction
+   (`country` defaults to India if extraction doesn't return one). All three checks
+   re-run at invoice-creation time too (`_resolve_supplier`), in case the real Supplier
+   was created or corrected in the meantime.
+
+None of these tiers are fuzzy string-similarity matching - each requires an exact match
+on some normalized/structured field (name, pincode, country+state), deliberately, to
+keep the false-positive risk of linking to the wrong Supplier low. A near-miss that
+doesn't satisfy any tier is routed to manual review as `New` rather than guessed at.
 
 ### DocTypes
 

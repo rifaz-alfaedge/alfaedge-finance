@@ -16,6 +16,12 @@ and this project uses [Semantic Versioning](https://semver.org/).
   matched against (confirmed live: an overseas invoice produced `9924USA29003OSI` as
   `gst_number`, which isn't a GSTIN). New-supplier creation also now captures and uses
   the extracted `country` instead of always defaulting the Address to India.
+- A further supplier-matching fallback, `resolve_by_name_and_address`, for when even
+  exact name matching finds nothing: normalizes the name further (punctuation
+  stripped too), and if that's ambiguous or empty, confirms/searches using the
+  Supplier's linked Address (country, state, pincode). Each tier still requires an
+  exact match on some normalized field - not fuzzy string similarity - to keep the
+  false-positive risk of linking to the wrong Supplier low.
 - **Alfaedge Finance workspace** in the Desk sidebar, with shortcuts and link cards to
   `Purchase Expense Center`, `Purchase Item Mapping`, `Tax Account Mapping`, and
   `Purchase Invoice Automation Settings` - so mappings can be viewed and managed

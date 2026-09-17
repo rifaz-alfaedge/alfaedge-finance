@@ -6,6 +6,7 @@ from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_reso
 	looks_like_gstin,
 	resolve_by_gst,
 	resolve_by_name,
+	resolve_by_name_and_address,
 )
 
 TEST_GSTIN = "29AABCF8078M1C8"
@@ -66,6 +67,90 @@ class TestResolveByName(FrappeTestCase):
 		self.assertIsNone(resolve_by_name(None))
 		self.assertIsNone(resolve_by_name(""))
 		self.assertIsNone(resolve_by_name("   "))
+
+
+class TestResolveByNameAndAddress(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+
+		if not frappe.db.exists("Supplier", {"supplier_name": "Anthropic, PBC"}):
+			cls.anthropic = frappe.get_doc(
+				{
+					"doctype": "Supplier",
+					"supplier_name": "Anthropic, PBC",
+					"supplier_group": "All Supplier Groups",
+					"supplier_type": "Company",
+				}
+			).insert(ignore_permissions=True)
+		else:
+			cls.anthropic = frappe.get_doc("Supplier", {"supplier_name": "Anthropic, PBC"})
+
+		if not frappe.db.exists(
+			"Address", {"address_title": "Anthropic, PBC", "pincode": "94104"}
+		):
+			frappe.get_doc(
+				{
+					"doctype": "Address",
+					"address_title": "Anthropic, PBC",
+					"address_type": "Billing",
+					"address_line1": "548 Market Street PMB 90375",
+					"city": "San Francisco",
+					"state": "California",
+					"pincode": "94104",
+					"country": "United States",
+					"links": [{"link_doctype": "Supplier", "link_name": cls.anthropic.name}],
+				}
+			).insert(ignore_permissions=True)
+
+		# A second, unrelated Supplier so pincode-only matching can't be trusted blindly.
+		if not frappe.db.exists("Supplier", {"supplier_name": "PIA Unrelated Co"}):
+			unrelated = frappe.get_doc(
+				{
+					"doctype": "Supplier",
+					"supplier_name": "PIA Unrelated Co",
+					"supplier_group": "All Supplier Groups",
+					"supplier_type": "Company",
+				}
+			).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "Address",
+					"address_title": "PIA Unrelated Co",
+					"address_type": "Billing",
+					"address_line1": "Somewhere else",
+					"city": "San Francisco",
+					"state": "California",
+					"pincode": "94104",
+					"country": "United States",
+					"links": [{"link_doctype": "Supplier", "link_name": unrelated.name}],
+				}
+			).insert(ignore_permissions=True)
+
+	def test_matches_on_normalized_name_alone_when_unique(self):
+		# Punctuation-only difference from the stored "Anthropic, PBC".
+		self.assertEqual(resolve_by_name_and_address("Anthropic PBC"), self.anthropic.name)
+
+	def test_no_match_when_name_and_address_both_disagree(self):
+		self.assertIsNone(
+			resolve_by_name_and_address("Totally Unrelated Name", postal_code="00000")
+		)
+
+	def test_address_only_match_requires_loose_name_overlap(self):
+		# Same pincode as Anthropic's address, but a name that shares no overlap
+		# with any Supplier at all - must not match.
+		self.assertIsNone(resolve_by_name_and_address("Zzz Totally Different Inc", postal_code="94104"))
+
+	def test_loose_name_overlap_plus_pincode_match_succeeds(self):
+		# "Anthropic" alone doesn't equal "Anthropic, PBC" after normalization,
+		# but it's contained within it, and the pincode confirms it.
+		self.assertEqual(
+			resolve_by_name_and_address("Anthropic", postal_code="94104"), self.anthropic.name
+		)
+
+	def test_no_name_is_not_an_error(self):
+		self.assertIsNone(resolve_by_name_and_address(None))
+		self.assertIsNone(resolve_by_name_and_address(""))
 
 
 class TestLooksLikeGstin(FrappeTestCase):

@@ -1,12 +1,18 @@
-"""GST-based (and, as a fallback, name-based) supplier matching, and new-supplier
-creation.
+"""GST-based, and as a fallback name/address-based, supplier matching, plus
+new-supplier creation.
 
-GSTIN is the primary identifier. An overseas supplier has none at all, and an LLM
-occasionally mislabels some other identifier (EIN, VAT number) as gst_number despite
-being told not to - either way, when GST-based matching comes up empty, falling back to
-an exact match on the supplier's name catches the common case (a known supplier with no
-GSTIN, or a garbled one) without the false-positive risk of fuzzy matching. Only when
-neither matches is it routed to manual review as a "New" supplier row.
+Three tiers, in order, before giving up and routing to manual review as a "New"
+supplier row:
+1. GSTIN (resolve_by_gst) - the primary identifier for domestic suppliers.
+2. Exact supplier name (resolve_by_name) - case/whitespace-insensitive - for a known
+   supplier with no usable GSTIN (overseas, or the LLM mislabelled some other ID as
+   gst_number).
+3. Normalized name + address (resolve_by_name_and_address) - name with punctuation
+   stripped too (catches "Anthropic, PBC" vs "Anthropic PBC"), confirmed against the
+   Supplier's own linked Address (country/state/city/pincode) when the loose name match
+   isn't unique on its own. Deliberately requires an address signal to agree before
+   trusting a non-exact name match - a name-only fuzzy match risks silently linking to
+   the wrong Supplier.
 """
 
 import re
@@ -15,6 +21,8 @@ import frappe
 from frappe.utils import getdate
 
 _GSTIN_SHAPE_RE = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]{3}$")
+_PUNCTUATION_RE = re.compile(r"[.,;:'\"()\[\]&/\\-]")
+_WHITESPACE_RE = re.compile(r"\s+")
 
 
 def looks_like_gstin(value: str | None) -> bool:
@@ -48,6 +56,97 @@ def resolve_by_name(supplier_name: str | None) -> str | None:
 		(supplier_name.strip(),),
 	)
 	return result[0][0] if result else None
+
+
+def _normalize_name(name: str) -> str:
+	name = _PUNCTUATION_RE.sub(" ", name)
+	return _WHITESPACE_RE.sub(" ", name.strip()).lower()
+
+
+def _supplier_address(supplier: str) -> dict | None:
+	address_name = frappe.db.get_value(
+		"Dynamic Link",
+		{"link_doctype": "Supplier", "link_name": supplier, "parenttype": "Address"},
+		"parent",
+	)
+	if not address_name:
+		return None
+	return frappe.db.get_value(
+		"Address", address_name, ["country", "state", "city", "pincode"], as_dict=True
+	)
+
+
+def _address_confirms(address: dict, country=None, state=None, postal_code=None) -> bool:
+	if postal_code and address.pincode and _normalize_name(address.pincode) == _normalize_name(postal_code):
+		return True
+	if (
+		country
+		and state
+		and address.country
+		and address.state
+		and _normalize_name(address.country) == _normalize_name(country)
+		and _normalize_name(address.state) == _normalize_name(state)
+	):
+		return True
+	return False
+
+
+def resolve_by_name_and_address(
+	supplier_name: str | None,
+	country: str | None = None,
+	state: str | None = None,
+	city: str | None = None,
+	postal_code: str | None = None,
+) -> str | None:
+	"""Broader fallback once exact name matching (resolve_by_name) has already
+	failed. Two paths, both requiring some agreement between name and address so
+	neither signal alone can produce a false match:
+
+	1. Normalized name match (punctuation/case/whitespace stripped, so
+	   "Anthropic, PBC" and "Anthropic PBC" are the same) - trusted on its own
+	   when it identifies exactly one Supplier. If it matches more than one
+	   (ambiguous), only trusted for the one whose linked Address also agrees on
+	   pincode, or on country+state.
+	2. If no Supplier's name normalizes to a match at all, fall back to address
+	   alone: an exact pincode match, but only for a Supplier whose name at least
+	   loosely overlaps (one normalized name contains the other) - a bare pincode
+	   match with a completely unrelated name is not trusted (could be a
+	   different company in the same building).
+	"""
+	if not supplier_name or not supplier_name.strip():
+		return None
+
+	target = _normalize_name(supplier_name)
+	if not target:
+		return None
+
+	suppliers = frappe.get_all("Supplier", fields=["name", "supplier_name"])
+	exact_name_candidates = [s.name for s in suppliers if _normalize_name(s.supplier_name) == target]
+
+	if len(exact_name_candidates) == 1:
+		return exact_name_candidates[0]
+
+	if exact_name_candidates:
+		# Ambiguous on name alone - only trust one that also agrees on address.
+		for supplier in exact_name_candidates:
+			address = _supplier_address(supplier)
+			if address and _address_confirms(address, country, state, postal_code):
+				return supplier
+		return None
+
+	if not postal_code:
+		return None
+
+	loose_candidates = [
+		s.name
+		for s in suppliers
+		if (n := _normalize_name(s.supplier_name)) and (n in target or target in n)
+	]
+	for supplier in loose_candidates:
+		address = _supplier_address(supplier)
+		if address and address.pincode and _normalize_name(address.pincode) == _normalize_name(postal_code):
+			return supplier
+	return None
 
 
 def resolve_tax_withholding_category(category: str, company: str, reference_date=None) -> dict | None:

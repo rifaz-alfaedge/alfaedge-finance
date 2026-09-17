@@ -15,6 +15,7 @@ from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_reso
 	looks_like_gstin,
 	resolve_by_gst,
 	resolve_by_name,
+	resolve_by_name_and_address,
 )
 from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.text_normalization import (
 	normalize_for_matching,
@@ -116,7 +117,17 @@ def _apply_extraction(doc, parsed: dict):
 	doc.supplier_invoice_number = parsed.get("invoice_number") or ""
 	doc.supplier_gst = gst_number or ""
 
-	existing_supplier = resolve_by_gst(gst_number) or resolve_by_name(parsed.get("supplier_name"))
+	supplier_name = parsed.get("supplier_name")
+	existing_supplier = (
+		resolve_by_gst(gst_number)
+		or resolve_by_name(supplier_name)
+		or resolve_by_name_and_address(
+			supplier_name,
+			country=parsed.get("country"),
+			state=parsed.get("state"),
+			postal_code=parsed.get("postal_code"),
+		)
+	)
 	if existing_supplier:
 		doc.supplier_type = "Existing"
 		doc.existing_supplier = existing_supplier
