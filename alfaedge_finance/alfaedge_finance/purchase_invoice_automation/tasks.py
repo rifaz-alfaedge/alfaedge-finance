@@ -105,12 +105,23 @@ def process_expense_center(expense_center: str):
 
 
 def _apply_extraction(doc, parsed: dict):
+	settings = get_settings()
+
 	gst_number = (parsed.get("gst_number") or "").strip().upper() or None
 	if gst_number and not looks_like_gstin(gst_number):
 		# Not a real GSTIN shape - an overseas supplier has none at all, and the
 		# model occasionally mislabels some other identifier (EIN, VAT number)
 		# as gst_number despite being told not to. Treat as absent rather than
 		# storing a bogus value in supplier_gst.
+		gst_number = None
+
+	our_own_gstin = frappe.db.get_value("Company", settings["company"], "gstin")
+	if gst_number and our_own_gstin and gst_number == our_own_gstin.strip().upper():
+		# The invoice's "Bill To" section prints our own GSTIN (some invoices
+		# do, for the buyer's records) and it got extracted as the supplier's
+		# instead - seen in practice. Our own company can never be its own
+		# supplier, so this is unambiguously a misextraction regardless of what
+		# the extraction prompt says.
 		gst_number = None
 
 	doc.supplier_invoice_date = parsed.get("invoice_date") or None
@@ -139,8 +150,6 @@ def _apply_extraction(doc, parsed: dict):
 		doc.state = parsed.get("state") or ""
 		doc.postal_code = parsed.get("postal_code") or ""
 		doc.country = parsed.get("country") or "India"
-
-	settings = get_settings()
 
 	currency = (parsed.get("currency") or "").strip().upper()
 	if not currency or not frappe.db.exists("Currency", currency):

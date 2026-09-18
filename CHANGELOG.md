@@ -7,6 +7,15 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- An invoice's "Bill To" section printing our own company's GSTIN got extracted as the
+  *supplier's* GSTIN instead (confirmed live on two records: a genuinely GST-less
+  overseas supplier ended up with `supplier_gst` set to our own company's GSTIN). The
+  extraction prompt now names our own company and GSTIN explicitly and tells the model
+  to exclude them; a hard code-level check also drops any extracted `gst_number` that
+  exactly matches our own `Company.gstin`, regardless of what the model returns - our
+  own company can never be its own supplier.
+
 ### Added
 - **Multi-currency support.** `Purchase Expense Center` gets a `currency` field, set
   from extraction (falling back to the Company's default currency). Invoice creation

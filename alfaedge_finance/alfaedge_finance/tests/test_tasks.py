@@ -21,6 +21,55 @@ class TestApplyExtractionCurrency(FrappeTestCase):
 		self.assertEqual(doc.currency, "INR")
 
 
+class TestApplyExtractionRejectsOwnGstin(FrappeTestCase):
+	"""Regression test for a real extraction bug: an invoice's "Bill To" section
+	printed our own company's GSTIN (some overseas suppliers capture it for
+	their own records), and it got extracted as the supplier's GST number
+	instead - our own company can never be its own supplier, so this must
+	always be dropped regardless of what the LLM returns.
+	"""
+
+	def test_drops_gst_number_matching_our_own_company(self):
+		our_gstin = frappe.db.get_value(
+			"Company",
+			frappe.get_single("Purchase Invoice Automation Settings").company,
+			"gstin",
+		)
+		if not our_gstin:
+			self.skipTest("Test Company has no GSTIN configured on this site")
+
+		doc = frappe.get_doc({"doctype": "Purchase Expense Center", "source": "Manual Upload"})
+		_apply_extraction(
+			doc,
+			{
+				"supplier_name": "PIA Bill-To Confusion Supplier",
+				"gst_number": our_gstin,
+				"items": [],
+				"taxes": [],
+			},
+		)
+
+		self.assertEqual(doc.supplier_gst, "")
+		self.assertEqual(doc.supplier_type, "New")  # nothing to match on with the GST dropped
+
+	def test_drops_gst_number_matching_our_own_company_case_insensitively(self):
+		our_gstin = frappe.db.get_value(
+			"Company",
+			frappe.get_single("Purchase Invoice Automation Settings").company,
+			"gstin",
+		)
+		if not our_gstin:
+			self.skipTest("Test Company has no GSTIN configured on this site")
+
+		doc = frappe.get_doc({"doctype": "Purchase Expense Center", "source": "Manual Upload"})
+		_apply_extraction(
+			doc,
+			{"supplier_name": "PIA Bill-To Confusion Supplier 2", "gst_number": our_gstin.lower(), "items": [], "taxes": []},
+		)
+
+		self.assertEqual(doc.supplier_gst, "")
+
+
 class TestApplyExtraction(FrappeTestCase):
 	def test_skips_zero_amount_line_items(self):
 		doc = frappe.get_doc({"doctype": "Purchase Expense Center", "source": "Manual Upload"})

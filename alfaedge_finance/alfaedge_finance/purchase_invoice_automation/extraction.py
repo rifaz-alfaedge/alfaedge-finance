@@ -10,10 +10,15 @@ from alfaedge_finance.alfaedge_finance.doctype.purchase_invoice_automation_setti
 	get_settings,
 )
 
-EXTRACTION_PROMPT = """Analyse this purchase invoice PDF and extract information.
+EXTRACTION_PROMPT_TEMPLATE = """Analyse this purchase invoice PDF and extract information
+about the SUPPLIER (the party who issued/sent this invoice and is being paid) - not the
+buyer/customer/bill-to party.
+
+{buyer_note}
+
 Return ONLY a valid JSON object with these exact keys - no markdown, no commentary:
 
-{
+{{
   "supplier_name":   "Full supplier company name or null",
   "gst_number":      "15-char Indian GSTIN or null (some invoices have none)",
   "invoice_number":  "Invoice number or null",
@@ -25,22 +30,28 @@ Return ONLY a valid JSON object with these exact keys - no markdown, no commenta
   "country":         "Supplier's country, full English name (e.g. 'India', 'United States') or null",
   "currency":        "3-letter ISO 4217 currency code the invoice is billed in (e.g. 'INR', 'USD') or null",
   "items": [
-    { "item_name": "description", "qty": 0, "rate": 0.0, "amount": 0.0 }
+    {{ "item_name": "description", "qty": 0, "rate": 0.0, "amount": 0.0 }}
   ],
   "taxes": [
-    { "tax_type": "CGST", "rate": 9, "amount": 0.0 }
+    {{ "tax_type": "CGST", "rate": 9, "amount": 0.0 }}
   ],
   "taxable_amount": 0.0,
   "grand_total": 0.0,
   "tds_rate": null,
   "tds_amount": null
-}
+}}
 
 Use null for missing strings and 0 for missing numbers.
-"gst_number" must be a real 15-character Indian GSTIN and nothing else. If no GSTIN is
-visible on the invoice - including for any supplier based outside India, who will never
-have one - use null. Never substitute a different identifier (EIN, VAT number, tax ID,
-company registration number, etc.) for gst_number just because one is printed.
+"supplier_name", "gst_number", "address", "city", "state", "postal_code", and "country"
+must all describe the SUPPLIER issuing the invoice. Many invoices also print the buyer's
+own name, address, and GSTIN in a "Bill To" / "Customer" / "Ship To" section - never
+extract any of those buyer-side details into these fields, even if the supplier's own
+details are less prominent on the page.
+"gst_number" must be a real 15-character Indian GSTIN belonging to the supplier, and
+nothing else. If no GSTIN is visible for the supplier - including for any supplier based
+outside India, who will never have one - use null, even if a GSTIN appears elsewhere on
+the invoice for the buyer. Never substitute a different identifier (EIN, VAT number, tax
+ID, company registration number, etc.) for gst_number just because one is printed.
 "currency" must be inferred from the invoice itself (a currency symbol, or an explicit
 mention) - never assume INR by default. All amounts (item rates, tax amounts,
 taxable_amount, grand_total, tds_amount) are in this same currency, exactly as printed -
@@ -70,6 +81,22 @@ def strip_markdown_fences(text):
 	return text.strip()
 
 
+def _build_prompt(company: str) -> str:
+	"""Names our own company (and its GSTIN, if it has one) explicitly, so the
+	model can recognize and exclude it when it shows up in a "Bill To" section -
+	seen in practice: our own company's GSTIN extracted as the supplier's.
+	"""
+	company_gstin = frappe.db.get_value("Company", company, "gstin")
+	buyer_note = f'The invoice is addressed TO our own company, "{company}"'
+	if company_gstin:
+		buyer_note += f' (GSTIN {company_gstin})'
+	buyer_note += (
+		" - that is the buyer, not the supplier. If you see this name or GSTIN on the "
+		"invoice, it identifies the buyer/customer, never extract it as the supplier."
+	)
+	return EXTRACTION_PROMPT_TEMPLATE.format(buyer_note=buyer_note)
+
+
 def extract_invoice_data(pdf_bytes: bytes) -> dict:
 	"""Call Bifrost with the PDF and return the parsed extraction dict.
 
@@ -93,7 +120,7 @@ def extract_invoice_data(pdf_bytes: bytes) -> dict:
 							"file_data": f"data:application/pdf;base64,{pdf_base64}",
 						},
 					},
-					{"type": "text", "text": EXTRACTION_PROMPT},
+					{"type": "text", "text": _build_prompt(settings["company"])},
 				],
 			}
 		],

@@ -39,11 +39,21 @@ drop is not required - it's a plain file picker) and feeds the exact same pipeli
 ### Supplier matching
 
 1. **By GSTIN** (`resolve_by_gst`): exact match against `Supplier.gstin`. The extracted
-   `gst_number` is first checked against the actual 15-character Indian GSTIN shape
-   (`looks_like_gstin`) - an overseas supplier has none at all, and the LLM has been
-   caught mislabeling some other identifier (an EIN, in one real case) as `gst_number`
-   despite being told not to; either way, anything that isn't GSTIN-shaped is treated as
-   absent rather than stored or matched against.
+   `gst_number` goes through two checks before it's trusted, since it's not a
+   GSTIN-shaped string. either way, anything that isn't GSTIN-shaped is treated as
+   absent rather than stored or matched against:
+   - **Shape** (`looks_like_gstin`): must actually be a 15-character Indian GSTIN - an
+     overseas supplier has none at all, and the LLM has been caught mislabeling some
+     other identifier (an EIN, in one real case) as `gst_number` despite being told not
+     to.
+   - **Not our own**: some invoices print *our own* company's GSTIN in a "Bill To"
+     section, and it's been extracted as the supplier's GSTIN instead of the actual
+     supplier's (or absence thereof). If the extracted `gst_number` exactly matches our
+     own `Company.gstin`, it's dropped - our own company can never be its own supplier,
+     so this is unambiguous regardless of what the extraction prompt says. The prompt
+     also now names our own company and GSTIN explicitly, telling the model to exclude
+     them, as a first line of defense - this check is the backstop for when that doesn't
+     work.
 2. **By exact name** (`resolve_by_name`), when GSTIN-based matching finds nothing: an
    exact, case/whitespace-insensitive match against `Supplier.supplier_name`. This is
    what catches an already-known overseas supplier (no GSTIN to match on at all) or a
