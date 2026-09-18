@@ -19,6 +19,16 @@ and this project uses [Semantic Versioning](https://semver.org/).
   Confirmed live end-to-end for a USD Anthropic invoice. Still requires the Supplier's
   Payable account to itself be set up in that currency (a Chart of Accounts / Supplier
   setup task, not something this app creates automatically).
+- A brand-new overseas supplier (created automatically because GST/name/address
+  matching found nothing) got no `default_currency` or Payable account at all, so its
+  first invoice always fell back to the Company's default (INR) Payable account and
+  failed the same way even though the invoice itself was correctly extracted in a
+  foreign currency (confirmed live: a new "Exa Labs Inc." USD supplier). New-supplier
+  creation now sets `default_currency` and reuses an existing, unambiguous Payable
+  account in that currency if one exists on the Company (`find_payable_account_for_currency`)
+  - never creates a new ledger account itself, so a first-of-its-kind currency still
+  needs that one-time Chart of Accounts setup, but every Supplier after that in the
+  same currency picks it up automatically.
 - Supplier matching now falls back to an exact, case/whitespace-insensitive match on
   `Supplier.supplier_name` when GSTIN-based matching finds nothing - covers overseas
   suppliers (no GSTIN at all) and cases where the LLM mislabels some other identifier

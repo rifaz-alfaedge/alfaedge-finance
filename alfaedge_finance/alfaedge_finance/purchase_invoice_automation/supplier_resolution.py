@@ -251,12 +251,38 @@ def _safe_gstin(gst_number: str | None) -> str | None:
 		return None
 
 
-def create_supplier_and_address(expense_center) -> str:
+def find_payable_account_for_currency(company: str, currency: str) -> str | None:
+	"""An existing, non-group Payable account under this company already
+	denominated in the given currency - only if exactly one such account exists.
+	Never creates a new account: which ledger account to use is a Chart-of-
+	Accounts decision left to a human. This only reuses one that's already
+	there, the same way Anthropic's pre-existing "Purchase Import" USD account
+	already made that Supplier work without any code changes.
+	"""
+	accounts = frappe.get_all(
+		"Account",
+		filters={
+			"company": company,
+			"account_type": "Payable",
+			"account_currency": currency,
+			"is_group": 0,
+		},
+		pluck="name",
+	)
+	return accounts[0] if len(accounts) == 1 else None
+
+
+def create_supplier_and_address(expense_center, company: str) -> str:
 	"""Create a Supplier (+ best-effort Address) from a New-supplier expense center row.
 
 	Address creation is isolated in its own try/except: a failure there must not
 	block Supplier or Purchase Invoice creation.
 	"""
+	company_currency = frappe.db.get_value("Company", company, "default_currency")
+	supplier_currency = (
+		expense_center.currency if expense_center.currency and expense_center.currency != company_currency else None
+	)
+
 	supplier = frappe.get_doc(
 		{
 			"doctype": "Supplier",
@@ -265,9 +291,31 @@ def create_supplier_and_address(expense_center) -> str:
 			or "All Supplier Groups",
 			"supplier_type": "Company",
 			"gstin": _safe_gstin(expense_center.supplier_gst),
+			"default_currency": supplier_currency,
 		}
 	)
 	supplier.insert(ignore_permissions=True)
+
+	if supplier_currency:
+		payable_account = find_payable_account_for_currency(company, supplier_currency)
+		if payable_account:
+			supplier.append("accounts", {"company": company, "account": payable_account})
+			supplier.save(ignore_permissions=True)
+		else:
+			# Not a blocker for Supplier creation itself, but invoice creation
+			# will still fail on the Payable-account-currency mismatch until a
+			# {currency} Payable account is created and added to this Supplier's
+			# Accounting > Default Accounts for this Company - a one-time setup
+			# per new currency, not per supplier.
+			frappe.log_error(
+				title="Purchase Invoice Automation: no matching Payable account for new currency",
+				message=(
+					f"Supplier {supplier.name!r} was created with default_currency="
+					f"{supplier_currency!r}, but no single unambiguous {company!r} Payable "
+					f"account in that currency exists yet. Create one and add it to this "
+					f"Supplier's Default Accounts before creating an invoice for them."
+				),
+			)
 
 	try:
 		if any([expense_center.address, expense_center.city, expense_center.state]):

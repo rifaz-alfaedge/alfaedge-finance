@@ -2,6 +2,8 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.supplier_resolution import (
+	create_supplier_and_address,
+	find_payable_account_for_currency,
 	get_tds_from_supplier,
 	looks_like_gstin,
 	resolve_by_gst,
@@ -217,3 +219,53 @@ class TestTdsFromSupplier(FrappeTestCase):
 		self.assertIsNone(
 			get_tds_from_supplier(self.supplier_with_twc.name, "Some Other Company", "2026-06-01")
 		)
+
+
+class TestCreateSupplierWithCurrency(FrappeTestCase):
+	"""Regression test for a real production bug: a brand-new overseas supplier
+	created automatically (no GST/name/address match) got no default_currency at
+	all, so its invoice always fell back to the Company's default (INR) Payable
+	account and failed with "Party Account ... currency (INR) and document
+	currency (USD) should be same" - even though the invoice itself was
+	correctly extracted as USD.
+	"""
+
+	def _make_new_supplier_expense_center(self, name_suffix, currency):
+		return frappe.get_doc(
+			{
+				"doctype": "Purchase Expense Center",
+				"source": "Manual Upload",
+				"supplier_type": "New",
+				"new_supplier": f"PIA New Currency Supplier {name_suffix}",
+				"address": "1 Somewhere St",
+				"city": "San Francisco",
+				"state": "California",
+				"postal_code": "94104",
+				"country": "United States",
+				"currency": currency,
+			}
+		)
+
+	def test_finds_existing_unambiguous_payable_account(self):
+		self.assertEqual(find_payable_account_for_currency(COMPANY, "USD"), "Purchase Import - CDS")
+
+	def test_none_when_no_payable_account_in_that_currency(self):
+		self.assertIsNone(find_payable_account_for_currency(COMPANY, "JPY"))
+
+	def test_new_supplier_gets_default_currency_and_payable_account(self):
+		expense_center = self._make_new_supplier_expense_center("A", "USD")
+		supplier_name = create_supplier_and_address(expense_center, COMPANY)
+
+		supplier = frappe.get_doc("Supplier", supplier_name)
+		self.assertEqual(supplier.default_currency, "USD")
+		self.assertEqual(len(supplier.accounts), 1)
+		self.assertEqual(supplier.accounts[0].company, COMPANY)
+		self.assertEqual(supplier.accounts[0].account, "Purchase Import - CDS")
+
+	def test_new_supplier_in_company_currency_gets_no_override(self):
+		expense_center = self._make_new_supplier_expense_center("B", "INR")
+		supplier_name = create_supplier_and_address(expense_center, COMPANY)
+
+		supplier = frappe.get_doc("Supplier", supplier_name)
+		self.assertFalse(supplier.default_currency)
+		self.assertEqual(len(supplier.accounts), 0)

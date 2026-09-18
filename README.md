@@ -257,14 +257,29 @@ At invoice creation:
   are left for `calculate_taxes_and_totals()` to derive from `conversion_rate`, which
   only equals rate/amount 1:1 when the invoice currency is the company's own.
 
-**This does not, by itself, set up multi-currency accounting** - ERPNext also requires
-the Supplier's Payable account (`credit_to`) to itself be denominated in that currency
-(a separate constraint from the two points above). That's a Chart of Accounts / Supplier
-setup task, not something this app creates automatically: create a currency-specific
-Payable account (e.g. "Creditors USD") under your Payables group, and add it to the
-Supplier's own **Accounts** table (`Supplier → Accounting tab → Default Accounts`) for
-your Company. Once that's done for a given Supplier, invoices from them in that currency
-work with no further setup.
+**ERPNext also requires the Supplier's Payable account (`credit_to`) to itself be
+denominated in that currency** - a separate constraint from the two points above, and
+the one that actually blocks invoice creation
+(`"Party Account ... currency (INR) and document currency (USD) should be same"`).
+Which ledger account to use is a Chart-of-Accounts decision this app never makes on its
+own - it will reuse an *existing* one, never create a new one:
+
+- **New supplier, non-Company currency** (`create_supplier_and_address`): sets
+  `default_currency` on the new Supplier, then looks for exactly one existing, non-group
+  Payable account under the Company already in that currency
+  (`find_payable_account_for_currency`) and adds it to the Supplier's own Accounts table
+  automatically if found. If none exists yet (first time this currency has come up),
+  Supplier creation still succeeds, but invoice creation for them will keep failing on
+  the account-currency mismatch until a human creates one - a one-time setup per new
+  *currency*, not per supplier, once it exists it's reused automatically for every
+  future supplier in that currency.
+- **Existing supplier**: unchanged from before - if the Supplier already has both
+  `default_currency` and a matching Payable account configured (however that happened),
+  invoices from them just work, as confirmed live for Anthropic, PBC.
+
+To do that one-time setup by hand: create a currency-specific Payable account (e.g.
+"Creditors USD") under your Payables group, then add it to the Supplier's own
+**Accounts** table (`Supplier → Accounting tab → Default Accounts`) for your Company.
 
 ### Running the tests
 

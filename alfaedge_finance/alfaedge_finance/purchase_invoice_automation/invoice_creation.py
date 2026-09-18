@@ -67,7 +67,7 @@ def _validate_mappings(expense_center, use_native_tds):
 		frappe.throw("<br>".join(errors), title=_("Mapping Incomplete"))
 
 
-def _resolve_supplier(expense_center):
+def _resolve_supplier(expense_center, company):
 	"""Re-check by GST (may have been created since extraction), then by name,
 	then by name+address, else create a new Supplier.
 	"""
@@ -87,7 +87,7 @@ def _resolve_supplier(expense_center):
 	)
 	if existing:
 		return existing
-	return create_supplier_and_address(expense_center)
+	return create_supplier_and_address(expense_center, company)
 
 
 def create_purchase_invoice_from_expense_center(expense_center_name: str) -> dict:
@@ -96,8 +96,8 @@ def create_purchase_invoice_from_expense_center(expense_center_name: str) -> dic
 	if expense_center.purchase_invoice:
 		frappe.throw(_("Invoice has already been created for this record."))
 
-	supplier = _resolve_supplier(expense_center)
 	settings = get_settings()
+	supplier = _resolve_supplier(expense_center, settings["company"])
 	# True for suppliers set up for ERPNext's own automatic TDS (a Tax Withholding
 	# Category on the Supplier, and not flagged to bypass it) - false for suppliers
 	# like OVH whose invoices never cross ERPNext's own threshold, where TDS is
