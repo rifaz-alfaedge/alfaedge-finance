@@ -1,10 +1,12 @@
 frappe.ui.form.on("Purchase Expense Center", {
 	refresh(frm) {
+		const cancelled = frm.doc.invoice_status === "Invoice Cancelled";
 		if (frm.doc.purchase_invoice) {
-			frm.add_custom_button(__("View Invoice"), () => {
+			frm.add_custom_button(cancelled ? __("View Cancelled Invoice") : __("View Invoice"), () => {
 				frappe.set_route("Form", "Purchase Invoice", frm.doc.purchase_invoice);
 			});
-		} else if (frm.doc.status === "Extracted") {
+		}
+		if (frm.doc.status === "Extracted" && (!frm.doc.purchase_invoice || cancelled)) {
 			frm.add_custom_button(__("Create Invoice"), () => {
 				frappe.call({
 					method: "alfaedge_finance.alfaedge_finance.doctype.purchase_expense_center.purchase_expense_center.create_purchase_invoice",
@@ -102,7 +104,47 @@ frappe.ui.form.on("Purchase Expense Center", {
 						flt((frm.doc.extracted_taxable_amount * tds.rate) / 100, precision("tds_amount", frm.doc))
 					);
 				}
+				offer_to_save_category_on_supplier(frm);
 			},
 		});
 	},
 });
+
+// Picking a category here only affects this invoice. Saving it on the Supplier turns on
+// ERPNext's automatic TDS for all their future invoices, so it's a separate, confirmed step.
+function offer_to_save_category_on_supplier(frm) {
+	const supplier = frm.doc.supplier_type === "Existing" && frm.doc.existing_supplier;
+	const category = frm.doc.tds_category;
+	if (!supplier || !category) return;
+
+	frappe.call({
+		method: "alfaedge_finance.alfaedge_finance.doctype.purchase_expense_center.purchase_expense_center.get_supplier_tds_default",
+		args: { supplier },
+		callback(r) {
+			const current = r.message;
+			if (!current || current.exclude_from_auto_tds || current.tax_withholding_category === category) return;
+
+			const message = current.tax_withholding_category
+				? __("Change {0}'s Tax Withholding Category from {1} to {2} for all future invoices?", [
+						supplier.bold(),
+						current.tax_withholding_category.bold(),
+						category.bold(),
+				  ])
+				: __("Also save {0} on {1}, so ERPNext deducts TDS automatically on all their future invoices?", [
+						category.bold(),
+						supplier.bold(),
+				  ]);
+			frappe.confirm(message, () => {
+				frappe.call({
+					method: "alfaedge_finance.alfaedge_finance.doctype.purchase_expense_center.purchase_expense_center.set_supplier_tds_category",
+					args: { supplier, category },
+					callback(res) {
+						if (res.message) {
+							frappe.show_alert({ message: __("Saved on Supplier {0}", [supplier]), indicator: "green" });
+						}
+					},
+				});
+			});
+		},
+	});
+}

@@ -129,6 +129,8 @@ class TestInvoiceCreation(FrappeTestCase):
 		result = create_purchase_invoice_from_expense_center(doc.name)
 
 		pi = frappe.get_doc("Purchase Invoice", result["purchase_invoice"])
+		# Open supplier advances (e.g. paid against a proforma) are pulled in automatically.
+		self.assertEqual(pi.allocate_advances_automatically, 1)
 		self.assertEqual(pi.docstatus, 0)  # draft, never submitted
 		self.assertEqual(len(pi.taxes), 2)
 		self.assertEqual(pi.taxes[0].charge_type, "On Net Total")
@@ -194,6 +196,59 @@ class TestInvoiceCreation(FrappeTestCase):
 
 		pi.cancel()
 		doc.reload()
+		self.assertEqual(doc.invoice_status, "Invoice Cancelled")
+
+	def test_reviewer_chosen_supplier_wins_over_gstin(self):
+		other = frappe.get_doc(
+			{
+				"doctype": "Supplier",
+				"supplier_name": "PIA Reviewer Choice " + frappe.generate_hash(length=6),
+				"supplier_group": "All Supplier Groups",
+				"supplier_type": "Company",
+			}
+		).insert(ignore_permissions=True)
+		doc = self._make_expense_center(with_tax=False)
+		doc.existing_supplier = other.name  # the reviewer overrides the GSTIN match
+		doc.save(ignore_permissions=True)
+
+		result = create_purchase_invoice_from_expense_center(doc.name)
+		self.assertEqual(frappe.db.get_value("Purchase Invoice", result["purchase_invoice"], "supplier"), other.name)
+
+	def test_amended_invoice_takes_over_the_link(self):
+		doc = self._make_expense_center(with_tax=False)
+		result = create_purchase_invoice_from_expense_center(doc.name)
+		pi = frappe.get_doc("Purchase Invoice", result["purchase_invoice"])
+		pi.submit()
+		pi.cancel()
+
+		amended = frappe.copy_doc(pi)
+		amended.amended_from = pi.name
+		amended.docstatus = 0
+		amended.insert(ignore_permissions=True)
+		doc.reload()
+		self.assertEqual(doc.purchase_invoice, amended.name)
+		self.assertEqual(doc.invoice_status, "Invoice Draft")
+
+		amended.submit()
+		doc.reload()
+		self.assertEqual(doc.invoice_status, "Invoice Submitted")
+
+	def test_cancelled_invoice_can_be_recreated(self):
+		doc = self._make_expense_center(with_tax=False)
+		result = create_purchase_invoice_from_expense_center(doc.name)
+		pi = frappe.get_doc("Purchase Invoice", result["purchase_invoice"])
+		pi.submit()
+		pi.cancel()
+
+		result2 = create_purchase_invoice_from_expense_center(doc.name)
+		self.assertNotEqual(result2["purchase_invoice"], pi.name)
+		doc.reload()
+		self.assertEqual(doc.purchase_invoice, result2["purchase_invoice"])
+
+		# Deleting the old cancelled invoice leaves the new one linked.
+		frappe.delete_doc("Purchase Invoice", pi.name, ignore_permissions=True)
+		doc.reload()
+		self.assertEqual(doc.purchase_invoice, result2["purchase_invoice"])
 		self.assertEqual(doc.invoice_status, "Invoice Draft")
 
 	def test_deleting_cancelled_invoice_unlinks_and_reopens_expense_center(self):
@@ -258,7 +313,7 @@ class TestInvoiceCreation(FrappeTestCase):
 		# pi.grand_total (98) differing from it by more than the ₹1 tolerance.
 		self.assertIsNone(result["warning"])
 
-	def test_picking_tds_category_updates_the_supplier(self):
+	def test_picking_tds_category_only_updates_the_supplier_when_confirmed(self):
 		gstin = "24AAQCA8719H1ZC"
 		if not frappe.db.exists("Supplier", {"gstin": gstin}):
 			supplier = frappe.get_doc(
@@ -286,6 +341,15 @@ class TestInvoiceCreation(FrappeTestCase):
 		)
 		doc.insert(ignore_permissions=True)
 
+		# Saving the Purchase Expense Center alone leaves the Supplier as it was...
+		self.assertFalse(frappe.db.get_value("Supplier", supplier.name, "tax_withholding_category"))
+
+		# ...the reviewer's confirmation (the form's prompt) saves it.
+		from alfaedge_finance.alfaedge_finance.doctype.purchase_expense_center.purchase_expense_center import (
+			set_supplier_tds_category,
+		)
+
+		self.assertTrue(set_supplier_tds_category(supplier.name, "TEST TWC 194J"))
 		self.assertEqual(
 			frappe.db.get_value("Supplier", supplier.name, "tax_withholding_category"),
 			"TEST TWC 194J",

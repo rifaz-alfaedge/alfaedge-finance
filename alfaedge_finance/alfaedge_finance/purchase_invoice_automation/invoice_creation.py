@@ -68,14 +68,15 @@ def _validate_mappings(expense_center, use_native_tds):
 
 
 def _resolve_supplier(expense_center, company):
-	"""Re-check by GST (may have been created since extraction), then by name,
-	then by name+address, else create a new Supplier.
+	"""The reviewer's Existing Supplier wins. For a New one, re-check by GST (the
+	Supplier may have been created since extraction), then by name, then by
+	name+address, else create a new Supplier.
 	"""
+	if expense_center.supplier_type == "Existing" and expense_center.existing_supplier:
+		return expense_center.existing_supplier
 	existing = resolve_by_gst(expense_center.supplier_gst)
 	if existing:
 		return existing
-	if expense_center.supplier_type == "Existing" and expense_center.existing_supplier:
-		return expense_center.existing_supplier
 	existing = resolve_by_name(expense_center.new_supplier)
 	if existing:
 		return existing
@@ -93,7 +94,9 @@ def _resolve_supplier(expense_center, company):
 def create_purchase_invoice_from_expense_center(expense_center_name: str) -> dict:
 	expense_center = frappe.get_doc("Purchase Expense Center", expense_center_name)
 
-	if expense_center.purchase_invoice:
+	if expense_center.purchase_invoice and frappe.db.get_value(
+		"Purchase Invoice", expense_center.purchase_invoice, "docstatus"
+	) in (0, 1):
 		frappe.throw(_("Invoice has already been created for this record."))
 
 	settings = get_settings()
@@ -128,6 +131,10 @@ def create_purchase_invoice_from_expense_center(expense_center_name: str) -> dic
 		pi.posting_date = expense_center.supplier_invoice_date
 	pi.set_posting_time = 1
 	pi.purchase_expense_center = expense_center.name
+	pi.flags.from_expense_center = True
+	# Pull in the supplier's open advances (e.g. paid against a proforma, or prepaid usage)
+	# oldest first - ERPNext does this on validate; the reviewer sees them on the draft.
+	pi.allocate_advances_automatically = 1
 
 	for row in expense_center.items:
 		item_master_name = frappe.db.get_value("Item", row.mapped_item, "item_name") or row.mapped_item
@@ -250,16 +257,42 @@ def create_purchase_invoice_from_expense_center(expense_center_name: str) -> dic
 	return {"purchase_invoice": pi.name, "warning": warning}
 
 
+STATUS_BY_DOCSTATUS = {0: "Invoice Draft", 1: "Invoice Submitted", 2: "Invoice Cancelled"}
+
+
 def sync_invoice_status(purchase_invoice_doc, method=None):
-	"""Keep Purchase Expense Center.invoice_status in step with its Purchase
-	Invoice's docstatus - called via doc_events on Purchase Invoice on_submit/on_cancel.
+	"""Keep Purchase Expense Center.purchase_invoice/invoice_status in step with its
+	Purchase Invoice - called via doc_events on Purchase Invoice after_insert,
+	on_submit and on_cancel.
+
+	An amendment (PINV-x-1) carries the same purchase_expense_center, so a new or
+	submitted invoice takes over the link from a cancelled one; cancelling an old
+	invoice never touches a link that has already moved on.
 	"""
+	if purchase_invoice_doc.flags.from_expense_center:
+		return  # create_purchase_invoice_from_expense_center sets the link itself
 	expense_center = purchase_invoice_doc.get("purchase_expense_center")
-	if not expense_center or not frappe.db.exists("Purchase Expense Center", expense_center):
+	if not expense_center:
+		return
+	linked = frappe.db.get_value("Purchase Expense Center", expense_center, "purchase_invoice", for_update=True)
+	if linked is None and not frappe.db.exists("Purchase Expense Center", expense_center):
 		return
 
-	new_status = "Invoice Submitted" if purchase_invoice_doc.docstatus == 1 else "Invoice Draft"
-	frappe.db.set_value("Purchase Expense Center", expense_center, "invoice_status", new_status)
+	if purchase_invoice_doc.docstatus == 2:
+		if linked != purchase_invoice_doc.name:
+			return
+	elif linked and linked != purchase_invoice_doc.name:
+		if frappe.db.get_value("Purchase Invoice", linked, "docstatus") in (0, 1):
+			return  # the record already has a live invoice; leave it alone
+
+	frappe.db.set_value(
+		"Purchase Expense Center",
+		expense_center,
+		{
+			"purchase_invoice": purchase_invoice_doc.name,
+			"invoice_status": STATUS_BY_DOCSTATUS[purchase_invoice_doc.docstatus],
+		},
+	)
 
 
 def unlink_from_expense_center(purchase_invoice_doc, method=None):
@@ -272,7 +305,10 @@ def unlink_from_expense_center(purchase_invoice_doc, method=None):
 	Center while a Purchase Invoice still links to it that stays blocked.
 	"""
 	expense_center = purchase_invoice_doc.get("purchase_expense_center")
-	if not expense_center or not frappe.db.exists("Purchase Expense Center", expense_center):
+	if not expense_center:
+		return
+	# Deleting an old cancelled invoice must not unlink the amendment that replaced it.
+	if frappe.db.get_value("Purchase Expense Center", expense_center, "purchase_invoice") != purchase_invoice_doc.name:
 		return
 
 	frappe.db.set_value(

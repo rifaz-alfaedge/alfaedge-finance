@@ -5,3 +5,6 @@
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 alfaedge_finance.patches.v0_2.normalize_purchase_item_mapping_keys
+alfaedge_finance.patches.v0_3.move_bank_statement_review_links_to_vouchers
+alfaedge_finance.patches.v0_3.fill_bank_statement_voucher_references
+alfaedge_finance.patches.v0_3.relink_amended_purchase_invoices

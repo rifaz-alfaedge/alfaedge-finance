@@ -5,6 +5,7 @@ extraction/mapping/duplicate-detection logic is written exactly once.
 """
 
 import frappe
+from frappe.utils import flt, getdate
 
 from alfaedge_finance.alfaedge_finance.doctype.purchase_invoice_automation_settings.purchase_invoice_automation_settings import (
 	get_settings,
@@ -83,7 +84,11 @@ def process_expense_center(expense_center: str):
 	frappe.db.commit()
 
 	try:
-		file_doc = frappe.get_doc("File", {"attached_to_doctype": "Purchase Expense Center", "attached_to_name": doc.name})
+		# The intake PDF, not whichever file a reviewer attached to the record later.
+		file_filters = {"attached_to_doctype": "Purchase Expense Center", "attached_to_name": doc.name}
+		if doc.pdf_attachment:
+			file_filters["file_url"] = doc.pdf_attachment
+		file_doc = frappe.get_doc("File", file_filters)
 		pdf_bytes = file_doc.get_content()
 		parsed = extract_invoice_data(pdf_bytes)
 		_apply_extraction(doc, parsed)
@@ -124,7 +129,7 @@ def _apply_extraction(doc, parsed: dict):
 		# the extraction prompt says.
 		gst_number = None
 
-	doc.supplier_invoice_date = parsed.get("invoice_date") or None
+	doc.supplier_invoice_date = _parse_date(parsed.get("invoice_date"))
 	doc.supplier_invoice_number = parsed.get("invoice_number") or ""
 	doc.supplier_gst = gst_number or ""
 
@@ -160,9 +165,9 @@ def _apply_extraction(doc, parsed: dict):
 
 	doc.items = []
 	for item in parsed.get("items") or []:
-		qty = float(item.get("qty") or 0)
-		rate = float(item.get("rate") or 0)
-		amount = float(item.get("amount") or (qty * rate))
+		qty = flt(item.get("qty"))
+		rate = flt(item.get("rate"))
+		amount = flt(item.get("amount")) or qty * rate
 
 		if amount == 0:
 			# Zero-amount lines show up as free samples, informational notes, or
@@ -201,14 +206,14 @@ def _apply_extraction(doc, parsed: dict):
 			"taxes",
 			{
 				"tax_type": tax_type,
-				"rate": float(tax.get("rate") or 0),
-				"amount": float(tax.get("amount") or 0),
+				"rate": flt(tax.get("rate")),
+				"amount": flt(tax.get("amount")),
 				"mapped_account": mapped_account or None,
 			},
 		)
 
-	doc.extracted_taxable_amount = float(parsed.get("taxable_amount") or 0) or None
-	doc.extracted_grand_total = float(parsed.get("grand_total") or 0) or None
+	doc.extracted_taxable_amount = flt(parsed.get("taxable_amount")) or None
+	doc.extracted_grand_total = flt(parsed.get("grand_total")) or None
 
 	tds_rate = parsed.get("tds_rate")
 	tds_amount = parsed.get("tds_amount")
@@ -216,8 +221,8 @@ def _apply_extraction(doc, parsed: dict):
 		# The invoice itself states a TDS deduction - trust that over any generic
 		# default configured on the Supplier master.
 		doc.is_tds_applicable = 1
-		doc.tds_rate = float(tds_rate or 0) or None
-		doc.tds_amount = float(tds_amount or 0) or None
+		doc.tds_rate = flt(tds_rate) or None
+		doc.tds_amount = flt(tds_amount) or None
 		doc.tds_account = settings["default_tds_account"]
 	elif doc.supplier_type == "Existing" and doc.existing_supplier:
 		# No TDS printed on the invoice - fall back to the Supplier's own Tax
@@ -234,6 +239,17 @@ def _apply_extraction(doc, parsed: dict):
 				doc.tds_amount = round(doc.extracted_taxable_amount * tds["rate"] / 100, 2)
 	# else: leave TDS fields untouched - the reviewer picks a TDS Category by hand
 	# when neither the invoice nor the Supplier master states a deduction.
+
+
+def _parse_date(value):
+	"""The model is told YYYY-MM-DD but occasionally returns "15/04/2026" or prose -
+	leave the date for the reviewer rather than failing the whole extraction."""
+	if not value:
+		return None
+	try:
+		return getdate(value)
+	except Exception:
+		return None
 
 
 def _flag_duplicates(doc):
@@ -258,4 +274,14 @@ def _flag_duplicates(doc):
 		},
 		"name",
 	)
+	if not duplicate and doc.supplier_type == "Existing" and doc.existing_supplier:
+		# Also an invoice keyed in by hand in ERPNext, without going through this app.
+		duplicate = frappe.db.exists(
+			"Purchase Invoice",
+			{
+				"supplier": doc.existing_supplier,
+				"bill_no": doc.supplier_invoice_number,
+				"docstatus": ["<", 2],
+			},
+		)
 	doc.is_potential_duplicate = 1 if duplicate else 0

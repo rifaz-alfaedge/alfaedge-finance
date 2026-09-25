@@ -1,0 +1,292 @@
+{
+ "actions": [],
+ "autoname": "BSR-.YYYY.-.#####",
+ "creation": "2026-09-24 00:00:00.000000",
+ "description": "Staging step before ERPNext's Bank Reconciliation Tool: finds booked entries for each statement line and suggests pre-filled ones for the rest.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "bank_account",
+  "company",
+  "gl_account",
+  "statement_file",
+  "column_break_period",
+  "from_date",
+  "to_date",
+  "status",
+  "date_tolerance_days",
+  "auto_submit_high",
+  "auto_draft_medium",
+  "section_balances",
+  "statement_account_no",
+  "currency",
+  "opening_balance",
+  "closing_balance",
+  "column_break_balances",
+  "total_withdrawal",
+  "total_deposit",
+  "book_balance",
+  "section_workbench",
+  "last_run_summary",
+  "workbench_html",
+  "section_documents",
+  "documents_html",
+  "section_lines",
+  "lines",
+  "section_vouchers",
+  "vouchers"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Title",
+   "read_only": 1
+  },
+  {
+   "fieldname": "bank_account",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Bank Account",
+   "options": "Bank Account",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fetch_from": "bank_account.company",
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "bank_account.account",
+   "fieldname": "gl_account",
+   "fieldtype": "Link",
+   "label": "Bank GL Account",
+   "options": "Account",
+   "read_only": 1
+  },
+  {
+   "fieldname": "statement_file",
+   "fieldtype": "Attach",
+   "label": "Statement File",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "column_break_period",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Read from the statement file.",
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "From Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "To Date",
+   "read_only": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nReviewed\nSent",
+   "read_only": 1
+  },
+  {
+   "default": "7",
+   "description": "How far a voucher's posting date may be from the bank date when matching on amount + date.",
+   "fieldname": "date_tolerance_days",
+   "fieldtype": "Int",
+   "label": "Date Tolerance (Days)"
+  },
+  {
+   "default": "1",
+   "description": "On upload and Re-run, create and submit (in the background) the entry for every High-confidence line.",
+   "fieldname": "auto_submit_high",
+   "fieldtype": "Check",
+   "label": "Auto-submit High confidence"
+  },
+  {
+   "default": "1",
+   "description": "On upload and Re-run, create a Draft entry for every Medium-confidence line.",
+   "fieldname": "auto_draft_medium",
+   "fieldtype": "Check",
+   "label": "Auto-create drafts for Medium confidence"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_balances",
+   "fieldtype": "Section Break",
+   "label": "Statement Totals"
+  },
+  {
+   "fieldname": "statement_account_no",
+   "fieldtype": "Data",
+   "label": "Statement Account No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "opening_balance",
+   "fieldtype": "Currency",
+   "label": "Opening Balance",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "closing_balance",
+   "fieldtype": "Currency",
+   "label": "Closing Balance",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_balances",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_withdrawal",
+   "fieldtype": "Currency",
+   "label": "Total Withdrawal",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_deposit",
+   "fieldtype": "Currency",
+   "label": "Total Deposit",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "book_balance",
+   "fieldtype": "Currency",
+   "label": "ERPNext Book Balance on To Date",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_workbench",
+   "fieldtype": "Section Break",
+   "label": "Review"
+  },
+  {
+   "fieldname": "last_run_summary",
+   "fieldtype": "Small Text",
+   "label": "Last Run",
+   "read_only": 1
+  },
+  {
+   "fieldname": "workbench_html",
+   "fieldtype": "HTML",
+   "label": "Workbench"
+  },
+  {
+   "fieldname": "section_documents",
+   "fieldtype": "Section Break",
+   "label": "Documents"
+  },
+  {
+   "fieldname": "documents_html",
+   "fieldtype": "HTML",
+   "label": "Documents"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_lines",
+   "fieldtype": "Section Break",
+   "label": "Statement Lines (raw)"
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Lines",
+   "options": "Bank Statement Review Line",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_vouchers",
+   "fieldtype": "Section Break",
+   "label": "Linked Vouchers (raw)"
+  },
+  {
+   "fieldname": "vouchers",
+   "fieldtype": "Table",
+   "label": "Vouchers",
+   "options": "Bank Statement Review Voucher",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-09-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alfaedge Finance",
+ "name": "Bank Statement Review",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "show_title_field_in_link": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

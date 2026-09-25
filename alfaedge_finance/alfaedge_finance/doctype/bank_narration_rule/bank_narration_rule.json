@@ -1,0 +1,143 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-09-24 00:00:00.000000",
+ "description": "Remembers how a bank counterparty is booked, so future statement lines from it get the same suggestion.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "counterparty_key",
+  "direction",
+  "rule_key",
+  "column_break_1",
+  "suggested_doctype",
+  "party_type",
+  "party",
+  "account",
+  "mode_of_payment",
+  "treat_as_advance"
+ ],
+ "fields": [
+  {
+   "description": "Normalised counterparty from the bank narration (lowercase, e.g. 'c lounge business cen', 'facebk', 'gst tax payment').",
+   "fieldname": "counterparty_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Counterparty Key",
+   "reqd": 1
+  },
+  {
+   "fieldname": "direction",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Direction",
+   "options": "Withdrawal\nDeposit",
+   "reqd": 1
+  },
+  {
+   "fieldname": "rule_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Rule Key",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "suggested_doctype",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Create",
+   "options": "Payment Entry\nJournal Entry",
+   "reqd": 1
+  },
+  {
+   "fieldname": "party_type",
+   "fieldtype": "Link",
+   "label": "Party Type",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "party",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Party",
+   "options": "party_type"
+  },
+  {
+   "description": "Contra account for a Journal Entry (e.g. Bank Charges, GST Payment).",
+   "fieldname": "account",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "mode_of_payment",
+   "fieldtype": "Link",
+   "label": "Mode of Payment",
+   "options": "Mode of Payment"
+  },
+  {
+   "description": "Payments to this payee are advances (e.g. prepaid usage) - suggested as an advance, not against an invoice.",
+   "fieldname": "treat_as_advance",
+   "fieldtype": "Check",
+   "label": "Treat as Advance"
+  }
+ ],
+ "links": [],
+ "modified": "2026-09-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alfaedge Finance",
+ "name": "Bank Narration Rule",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "counterparty_key,party,account",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "counterparty_key",
+ "track_changes": 1
+}

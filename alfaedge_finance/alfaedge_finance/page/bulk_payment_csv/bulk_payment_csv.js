@@ -249,8 +249,35 @@ class BulkPaymentCSV {
 		this.page.set_secondary_action('Download Excel', () => this.download_xlsx(), 'download');
 	}
 
+	render_advances_table() {
+		let adjusted = (this.rows || []).filter((row) => row.advance_deducted);
+		if (!adjusted.length) return;
+
+		let fmt = (value) => frappe.utils.escape_html(format_number(value, null, 2));
+		let rows_html = adjusted
+			.map(
+				(row) => `<tr>
+					<td>${frappe.utils.escape_html(row.party_label || '')}</td>
+					<td class="text-right">${fmt(row.invoices_due)}</td>
+					<td class="text-right">${fmt(row.advance_deducted)}</td>
+					<td class="text-right">${fmt(row.invoices_due - row.advance_deducted)}</td>
+				</tr>`
+			)
+			.join('');
+		this.unmatched_wrapper.append(`
+			<div style="font-weight: 600; margin-bottom: 8px;">
+				Open advances deducted (${adjusted.length}) — edit the amount above if an advance is meant for a later invoice
+			</div>
+			<table class="table table-bordered table-sm" style="background:#fafafa; margin-bottom: 20px;">
+				<thead><tr><th>Supplier</th><th class="text-right">Invoices due</th><th class="text-right">Open advance</th><th class="text-right">Amount in file</th></tr></thead>
+				<tbody>${rows_html}</tbody>
+			</table>
+		`);
+	}
+
 	render_unmatched_table() {
 		this.unmatched_wrapper.empty();
+		this.render_advances_table();
 
 		if (!this.unmatched_rows || !this.unmatched_rows.length) {
 			return;
@@ -258,7 +285,7 @@ class BulkPaymentCSV {
 
 		this.unmatched_wrapper.append(
 			`<div style="font-weight: 600; margin-bottom: 8px; color: #d13438;">
-				No Bank Account found (${this.unmatched_rows.length}) — excluded from the CSV export
+				Not included (${this.unmatched_rows.length}) — excluded from the CSV export
 			</div>`
 		);
 
@@ -267,13 +294,14 @@ class BulkPaymentCSV {
 				(row) => `<tr>
 					<td>${frappe.utils.escape_html(row.party_label || '')}</td>
 					<td>${frappe.utils.escape_html(String(row.transaction_amount != null ? row.transaction_amount : ''))}</td>
+					<td>${frappe.utils.escape_html(row.reason || '')}</td>
 				</tr>`
 			)
 			.join('');
 
 		let $table = $(`
 			<table class="table table-bordered table-sm" style="background:#fafafa;">
-				<thead><tr><th>Employee / Supplier</th><th>Amount</th></tr></thead>
+				<thead><tr><th>Employee / Supplier</th><th>Amount</th><th>Reason</th></tr></thead>
 				<tbody>${rows_html}</tbody>
 			</table>
 		`);
@@ -285,64 +313,10 @@ class BulkPaymentCSV {
 			frappe.msgprint('No rows to export.');
 			return;
 		}
-		this.ensure_xlsx_lib(() => this.build_and_download_xlsx());
-	}
-
-	// SheetJS (the "xlsx" library) isn't guaranteed to be loaded on every
-	// Frappe page, so we load it on demand from a CDN if it isn't already
-	// present as window.XLSX.
-	ensure_xlsx_lib(callback) {
-		if (window.XLSX) {
-			callback();
-			return;
-		}
-		frappe.dom.freeze('Loading Excel export library...');
-		let script = document.createElement('script');
-		script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-		script.onload = () => {
-			frappe.dom.unfreeze();
-			callback();
-		};
-		script.onerror = () => {
-			frappe.dom.unfreeze();
-			frappe.msgprint('Could not load the Excel export library. Check your internet connection and try again.');
-		};
-		document.head.appendChild(script);
-	}
-
-	build_and_download_xlsx() {
-		let header = this.columns.map((c) => c.label);
-		let data = [header];
-		this.rows.forEach((row) => {
-			data.push(this.columns.map((c) => (row[c.fieldname] != null ? row[c.fieldname] : '')));
-		});
-
-		let ws = XLSX.utils.aoa_to_sheet(data);
-
-		// Force these columns to be stored as TEXT cells, not numbers — this is
-		// what stops Excel/the bank's reader from converting long account
-		// numbers into scientific notation (e.g. 9.2402E+14), which happened
-		// earlier when this data went through a normal CSV -> Excel round trip.
-		let text_fieldnames = [
-			'debit_account_no', 'beneficiary_account_no', 'beneficiary_ifsc',
-			'transaction_date', 'payment_mode', 'customer_ref_no', 'beneficiary_nickname',
-		];
-		this.columns.forEach((col, col_idx) => {
-			if (!text_fieldnames.includes(col.fieldname)) return;
-			for (let row_idx = 1; row_idx <= this.rows.length; row_idx++) {
-				let cell_ref = XLSX.utils.encode_cell({ r: row_idx, c: col_idx });
-				let cell = ws[cell_ref];
-				if (cell) {
-					cell.t = 's';
-					cell.v = String(cell.v);
-				}
-			}
-		});
-
-		let wb = XLSX.utils.book_new();
-		XLSX.utils.book_append_sheet(wb, ws, 'Bulk Payment');
-
-		let filename = `Bulk_Payment_${this.txn_type_field.get_value()}_${frappe.datetime.get_today()}.xlsx`;
-		XLSX.writeFile(wb, filename);
+		// Built on the server from the rows as edited here - see download_xlsx in the .py.
+		open_url_post(
+			'/api/method/alfaedge_finance.alfaedge_finance.page.bulk_payment_csv.bulk_payment_csv.download_xlsx',
+			{ rows: JSON.stringify(this.rows), txn_type: this.txn_type_field.get_value() }
+		);
 	}
 }

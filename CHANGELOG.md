@@ -15,8 +15,140 @@ and this project uses [Semantic Versioning](https://semver.org/).
   to exclude them; a hard code-level check also drops any extracted `gst_number` that
   exactly matches our own `Company.gstin`, regardless of what the model returns - our
   own company can never be its own supplier.
+- **Create Invoice ignored the reviewer's supplier.** When the extracted GSTIN matched
+  some Supplier, that Supplier was used even if the reviewer had picked a different
+  Existing Supplier on the Purchase Expense Center. The reviewer's choice now wins.
+- **Cancelled and amended invoices.** A Purchase Expense Center kept pointing at a
+  cancelled Purchase Invoice after it was amended (seen live: PEC-2026-00015 →
+  cancelled PINV-26-00172, while PINV-26-00172-1 was the live invoice). An amendment
+  now takes over the link. A cancelled invoice shows the new "Invoice Cancelled"
+  status, and Create Invoice is offered again. Deleting an old cancelled invoice no
+  longer unlinks its replacement. A patch fixes existing records.
+- **Bulk Payment CSV:**
+  - USD invoices' outstanding was added to rupee totals, so $150 was exported as
+    ₹150. Foreign-currency invoices are now listed separately with the reason
+    "pay separately".
+  - Amounts are rounded to 2 decimals, so no float noise reaches the bank file.
+  - Expense Claims use HRMS's outstanding (grand total less advances and
+    reimbursements), approved claims only.
+  - Invoices on hold are skipped.
+- **Permissions.** Several whitelisted methods were callable by any logged-in user:
+  - Create Invoice and Retry Extraction (these create Purchase Invoices and
+    Suppliers with elevated rights)
+  - PDF upload
+  - Bulk Map Items (raw SQL update)
+  - Bulk Payment CSV (salaries and bank account numbers)
+
+  They now check the same permissions/roles as the documents and page they serve.
+  Bulk Map Items also checks the Item exists, because its SQL update skips Link
+  validation.
+- **Email webhook.** The secret is compared in constant time, and attachments that
+  aren't real PDFs are skipped.
+- **Extraction.** An unparseable invoice date, or amounts with thousands separators
+  ("1,000.00"), failed the whole extraction. The date is now left blank for the
+  reviewer, and the amounts are parsed. Duplicate detection also checks Purchase
+  Invoices entered directly in ERPNext (same supplier + bill no). Retry uses the
+  intake PDF rather than any file attached later.
+- **Tax Account Mapping is learned once.** Saving a Purchase Expense Center with a
+  different account for CGST/SGST/IGST (e.g. reverse charge) used to change the
+  default for every future invoice without saying so. Now only the first mapping of
+  each tax type is learned. Change the default in Tax Account Mapping itself.
+- **Supplier TDS category needs confirmation.** Picking a Tax Withholding Category on
+  a Purchase Expense Center used to write it onto the Supplier on every save, with no
+  entry in its history. The form now asks "also save on the Supplier for future
+  invoices?", and a yes saves it through the Supplier document, so it shows in the
+  history.
+- **Bulk Payment CSV:**
+  - Invoices due *on* the transaction date are included; before, they slipped to the
+    next run.
+  - A supplier's open advances (unallocated Payment Entries and advance Journal
+    Entry rows) are deducted from their total. The page shows an "Open advances
+    deducted" table, and a supplier fully covered by an advance is left out with that
+    reason.
+  - The Excel file is now built on the server (openpyxl) from the rows as edited, so
+    the page no longer loads a spreadsheet library from an outside CDN.
+- **Email webhook limits:** at most 20 attachments per email, 20 MB per attachment
+  (larger ones are skipped and logged), and 60 requests an hour per sender IP.
 
 ### Added
+- **Bank Statement Review**, a staging step before ERPNext's own Bank Reconciliation
+  Tool. The native tool is left untouched.
+  - **Upload** the bank's raw `.xlsx`/`.xls` statement with **Upload Bank Statement**.
+    Any period works (daily, weekly, monthly or custom). The account and dates come from
+    the file, and running and closing balances are validated. Axis Bank's export is
+    supported.
+  - **Auto-pick** existing submitted Payment Entries and Journal Entries. Matching is on
+    the reference extracted from the narration plus the exact amount, then on amount +
+    date. Ambiguous cases are flagged "Check" with their alternatives. A voucher is never
+    matched twice.
+  - **Suggest** the record to create for every line that isn't booked yet: Payment Entry
+    or Journal Entry; the Supplier, Customer or Employee, or the ledger account; and the
+    invoice or expense claim it settles.
+    - Suggestions come from Bank Narration Rules, past reconciled transactions, a unique
+      party-name prefix match, or an open document with that exact outstanding amount.
+    - Each is pre-filled and editable, and created as a **Draft** (never submitted), or
+      opened unsaved in its form.
+  - **Re-run Reconciliation** on the same file after creating records.
+  - **Send to Bank Reconciliation** creates the native Bank Transactions. Overlapping
+    uploads are detected, so a line is never imported twice.
+  - New **Bank Narration Rule** DocType. Rules are learned automatically from created
+    drafts, or in bulk with **Learn from History**.
+  - **One bank line, several documents.** Every linked or created document is a row in
+    a new `vouchers` table, and lines can be Partly Booked.
+    - Matching books a line from several vouchers that share its reference (a bulk
+      transfer), and proposes a unique exact-sum combination as a Check.
+    - Suggestions can be a split plan across several open invoices and parties.
+    - **Split this payment** creates one Draft Payment Entry per party.
+  - **Advances.**
+    - Mark one or many lines as an advance: a Payment Entry with no invoice, or against
+      an open order, with the proforma reference in its remarks.
+    - Payees can be remembered as "always an advance".
+    - A known party with no open invoice is suggested as an advance automatically.
+    - Advances show a badge and have their own filter.
+    - Purchase Invoices created by the automation now pull in the supplier's open
+      advances (ERPNext's "Set Advances and Allocate (FIFO)").
+  - **Better matching and automation.**
+    - The party is found from the narration's first word, e.g. `OVH` → Ovhtech R&d.
+    - When several documents have the same amount, the one posted closest to the bank
+      date wins.
+    - Lines with no match still get the party type and mode of payment filled in.
+    - Confidence is stricter: High means a known party plus an exact document.
+    - New per-review switches (on by default) create drafts for Medium lines and create
+      and submit (in the background) High lines, on upload and on Re-run.
+  - **Orders as well as invoices.** Payments can settle an open Purchase Order or Sales
+    Order as an advance. This works in suggestions (exact outstanding), in Review and
+    split rows, and in bulk-file rows (Purchase Orders).
+  - **Foreign-currency invoices paid in INR** (e.g. USD SaaS invoices paid by card) are
+    matched by the supplier/customer being named in the narration. The amount is only a
+    sanity check against the market rate. The Payment Entry pays the bank's INR against
+    the invoice's foreign amount, with the difference booked to Exchange Gain/Loss.
+  - **Customer TDS detection.** A receipt short of an unpaid Sales Invoice, or of an open
+    Sales Order with no advance yet, by 2%, 5% or 10% of its net total is suggested
+    against that document. The difference is booked as
+    a TDS deduction on the Payment Entry, to the account past receipts used.
+  - **Bulk payments.** A bulk bank debit (`NEFT/<batch>/<count>/AW...`) takes an upload
+    of the bank's bulk-payment file (the one the Bulk Payment CSV page generates).
+    - Each beneficiary is identified from its bank account number via the
+      Employee/Supplier Bank Accounts.
+    - Each row is matched to the Salary Slip, Expense Claims or Purchase Invoices that
+      make up its amount exactly.
+    - It becomes **one Draft Journal Entry**: bank credit, plus a debit row per
+      document, or on-account where no documents fit.
+    - Rows with an unknown account are flagged and must be fixed first.
+    - Only documents up to the file's transaction date count. When none add up
+      exactly, they're allocated oldest first and any remainder is booked on account.
+  - **Documents table** under the lines, listing every created or matched document with
+    its live status. Each can be opened, or deleted if it's a draft.
+  - **Drafts from the review.** Each draft can be viewed, submitted (after a
+    confirmation) or deleted from its line or the Documents table.
+    The Documents table shows each document's Cheque/Reference No, editable on drafts.
+    Drafts can also be ticked, individually or all at once, and submitted in bulk as a
+    background job, with live progress and a list of any that failed.
+  - **Deleting drafts.** Drafts can be deleted from the review. Deleting one from its own
+    form is no longer blocked by the review's link. Submitting, cancelling or deleting a
+    linked entry updates its line immediately.
+  - **Deletion lock.** A review can't be deleted once it has been sent to Bank
+    Reconciliation. Before that, deleting it also deletes the drafts it created.
 - **Multi-currency support.** `Purchase Expense Center` gets a `currency` field, set
   from extraction (falling back to the Company's default currency). Invoice creation
   sets `Purchase Invoice.currency` (the Supplier's own `default_currency` takes

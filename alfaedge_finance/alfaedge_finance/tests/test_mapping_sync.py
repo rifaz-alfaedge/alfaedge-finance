@@ -104,3 +104,19 @@ class TestMappingSync(FrappeTestCase):
 			frappe.db.get_value("Tax Account Mapping", {"tax_type": tax_type}, "mapped_account"),
 			"Creditors - CDS",
 		)
+
+	def test_a_different_tax_account_on_one_invoice_does_not_change_the_default(self):
+		tax_type = f"SYNC-{frappe.generate_hash(length=6)}"
+		first = frappe.get_doc({"doctype": "Purchase Expense Center", "source": "Manual Upload"})
+		first.append("taxes", {"tax_type": tax_type, "rate": 5, "amount": 5, "mapped_account": "Creditors - CDS"})
+		first.insert(ignore_permissions=True)
+
+		# e.g. a reverse-charge invoice booked to another account
+		other = frappe.get_doc({"doctype": "Purchase Expense Center", "source": "Manual Upload"})
+		other.append("taxes", {"tax_type": tax_type, "rate": 5, "amount": 5, "mapped_account": "Debtors - CDS"})
+		other.insert(ignore_permissions=True)
+
+		self.assertEqual(
+			frappe.db.get_value("Tax Account Mapping", {"tax_type": tax_type}, "mapped_account"),
+			"Creditors - CDS",
+		)

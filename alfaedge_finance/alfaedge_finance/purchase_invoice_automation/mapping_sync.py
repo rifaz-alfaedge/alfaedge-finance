@@ -23,18 +23,22 @@ def sync_mappings(doc):
 
 	for row in doc.taxes:
 		if row.mapped_account and row.tax_type:
+			# One account per tax type for every future invoice - only learned the first
+			# time. A different account on one invoice (reverse charge, ineligible ITC) stays
+			# on that invoice; change the default in Tax Account Mapping itself.
 			_upsert(
 				"Tax Account Mapping",
 				{"tax_type": row.tax_type},
 				"mapped_account",
 				row.mapped_account,
+				overwrite=False,
 			)
 
 
-def _upsert(doctype, key, value_field, value):
+def _upsert(doctype, key, value_field, value, overwrite=True):
 	name = frappe.db.get_value(doctype, key, "name")
 	if name:
-		if frappe.db.get_value(doctype, name, value_field) != value:
+		if overwrite and frappe.db.get_value(doctype, name, value_field) != value:
 			frappe.db.set_value(doctype, name, value_field, value)
 	else:
 		frappe.get_doc({"doctype": doctype, **key, value_field: value}).insert(ignore_permissions=True)

@@ -9,6 +9,7 @@ backfilling ~100 existing unmapped rows.
 import json
 
 import frappe
+from frappe import _
 
 from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.text_normalization import (
 	normalize_for_matching,
@@ -17,6 +18,7 @@ from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.text_normaliz
 
 @frappe.whitelist()
 def get_unmapped_item_descriptions():
+	frappe.has_permission("Purchase Expense Center", "read", throw=True)
 	return frappe.db.sql(
 		"""
 		select item_name, count(*) as row_count
@@ -34,6 +36,8 @@ def get_unmapped_item_descriptions():
 @frappe.whitelist()
 def bulk_map_items(mapping):
 	"""mapping: JSON string or dict of {item_name: mapped_item}."""
+	frappe.has_permission("Purchase Expense Center", "write", throw=True)
+	frappe.has_permission("Purchase Item Mapping", "write", throw=True)
 	if isinstance(mapping, str):
 		mapping = json.loads(mapping)
 
@@ -41,6 +45,9 @@ def bulk_map_items(mapping):
 	for item_name, mapped_item in mapping.items():
 		if not mapped_item:
 			continue
+		# The UPDATE below bypasses Link validation, so check the Item exists first.
+		if not frappe.db.exists("Item", mapped_item):
+			frappe.throw(_("Item {0} does not exist.").format(mapped_item))
 		frappe.db.sql(
 			"""
 			update `tabPurchase Invoice Item`

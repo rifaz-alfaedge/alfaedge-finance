@@ -17,6 +17,7 @@ from alfaedge_finance.alfaedge_finance.purchase_invoice_automation.tasks import 
 
 @frappe.whitelist()
 def upload_purchase_invoices(attachments):
+	frappe.has_permission("Purchase Expense Center", "create", throw=True)
 	if isinstance(attachments, str):
 		attachments = json.loads(attachments)
 

@@ -190,32 +190,31 @@ def get_tds_from_supplier(supplier: str, company: str, reference_date=None) -> d
 	return resolve_tax_withholding_category(category, company, reference_date)
 
 
-def sync_tax_withholding_category_to_supplier(doc):
-	"""When a reviewer sets/changes the Tax Withholding Category on a Purchase
-	Expense Center for an Existing Supplier, remember it on the Supplier itself so
-	future invoices from them apply TDS the standard ERPNext way (apply_tds)
-	without needing to pick it again here.
+def set_tax_withholding_category_on_supplier(supplier: str, category: str) -> bool:
+	"""Remember a Tax Withholding Category on the Supplier itself, so future invoices from
+	them apply TDS the standard ERPNext way (apply_tds) without picking it again.
 
-	Skipped for a Supplier flagged exclude_from_auto_tds - that flag means this
-	app must never turn on ERPNext's automatic TDS for them (their invoices don't
-	cross ERPNext's own threshold, so automatic TDS would silently not apply; TDS
-	is instead deducted manually via the tds_rate/tds_account/tds_amount fields
-	regardless of any Tax Withholding Category picked here for calculation).
+	Only on the reviewer's explicit confirmation (the Purchase Expense Center form asks) -
+	it changes every future invoice for this Supplier, so one odd invoice must not
+	change it silently. Saved through the Supplier document so it shows in its history.
+
+	Refused for a Supplier flagged exclude_from_auto_tds - that flag means this app must
+	never turn on ERPNext's automatic TDS for them (their invoices don't cross ERPNext's
+	own threshold; TDS is deducted manually via the tds_* fields instead).
 	"""
-	if not (doc.tds_category and doc.supplier_type == "Existing" and doc.existing_supplier):
-		return
-
-	supplier = frappe.db.get_value(
-		"Supplier",
-		doc.existing_supplier,
-		["tax_withholding_category", "exclude_from_auto_tds"],
-		as_dict=True,
-	)
-	if not supplier or supplier.exclude_from_auto_tds:
-		return
-
-	if supplier.tax_withholding_category != doc.tds_category:
-		frappe.db.set_value("Supplier", doc.existing_supplier, "tax_withholding_category", doc.tds_category)
+	doc = frappe.get_doc("Supplier", supplier)
+	doc.check_permission("write")
+	if doc.get("exclude_from_auto_tds"):
+		frappe.throw(
+			frappe._("{0} is set to exclude from automatic TDS - its category is not changed from here.").format(
+				supplier
+			)
+		)
+	if doc.tax_withholding_category == category:
+		return False
+	doc.tax_withholding_category = category
+	doc.save()
+	return True
 
 
 def supplier_uses_automatic_tds(supplier: str) -> bool:

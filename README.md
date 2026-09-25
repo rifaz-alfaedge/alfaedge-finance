@@ -168,9 +168,12 @@ during the first few invoice reviews is simpler than building a second bulk dial
 Either way, mapping is remembered from that point on: saving a `Purchase Expense
 Center` with a `mapped_item`/`mapped_account` set on any row - whether it got there via
 the bulk dialog, extraction prefill, or just typed in by hand - upserts it into
-`Purchase Item Mapping`/`Tax Account Mapping` automatically (`on_update`, see
-`purchase_invoice_automation/mapping_sync.py`). You never need to map the same
-description or tax type twice, and it's permanent regardless of what later happens to
+`Purchase Item Mapping` automatically (`on_update`, see
+`purchase_invoice_automation/mapping_sync.py`). `Tax Account Mapping` is only learned
+the first time a tax type is mapped: one tax type maps to one account for every future
+invoice, so a different account on a single invoice (reverse charge, ineligible ITC)
+stays on that invoice. Change the default in `Tax Account Mapping` itself. You never
+need to map the same description or tax type twice, and it's permanent regardless of what later happens to
 the `Purchase Expense Center` it was mapped on (deleting that record does not remove the
 mapping - they're independent doctypes).
 
@@ -235,10 +238,11 @@ The manual TDS section fills in from, in priority order:
    auto-fills rate/account and computes `tds_amount` as `extracted_taxable_amount ×
    rate` (on the pre-GST taxable amount, not the GST-inclusive total).
 
-Saving a `Purchase Expense Center` with `tds_category` set updates the matched
-Supplier's own `tax_withholding_category` to the same value automatically (unless that
-Supplier is excluded per above) - so once picked, that Supplier's future invoices go
-through the native path with no further manual selection needed. Invoice creation
+Picking a `tds_category` by hand for an Existing Supplier asks whether to also save it
+on the Supplier (unless that Supplier is excluded per above). On yes, it is saved
+through the Supplier document, so it shows in the Supplier's history, and that
+Supplier's future invoices go through the native path with no further manual
+selection. On no, it applies to this invoice only. Invoice creation
 blocks if `is_tds_applicable` is checked (manual path) but the account or amount is
 missing, same as item/tax mapping. The grand-total reconciliation check accounts for
 either path - it reads back whatever ERPNext actually deducted for the native case
@@ -290,6 +294,226 @@ own - it will reuse an *existing* one, never create a new one:
 To do that one-time setup by hand: create a currency-specific Payable account (e.g.
 "Creditors USD") under your Payables group, then add it to the Supplier's own
 **Accounts** table (`Supplier → Accounting tab → Default Accounts`) for your Company.
+
+## Bank Statement Review
+
+A staging step that runs **before** ERPNext's own Bank Reconciliation Tool, which it
+never modifies. ERPNext's tool only reconciles against entries that already exist. For
+anything missing it just offers blank "create entry" shortcuts. This step closes that
+gap: every statement line either gets its already-booked entry picked automatically, or
+gets a suggested, pre-filled record to create.
+
+### Flow
+
+1. **Upload.** Use **Upload Bank Statement** on the `Bank Statement Review` list, and
+   pick the bank's own `.xlsx`/`.xls` export as downloaded. Any period works: daily,
+   weekly, monthly or custom. The account number and From/To dates are read from the
+   file. The bank account is picked by matching that number against
+   `Bank Account.bank_account_no`. The statement is rejected if any running balance, or
+   opening + credits − debits = closing, doesn't add up.
+2. **Auto-pick booked entries** (`bank_statement/matching.py`). Candidates are
+   submitted, uncleared Payment Entries and Journal Entries on the bank's GL account,
+   in the same direction, within ±7 days (configurable per review). The amount is
+   compared in the bank's currency (`received_amount` for a foreign receipt, not its
+   USD `paid_amount`) and must match exactly.
+   - **Reference + amount → Already Booked.** The reference is extracted from the
+     narration (UTR / RRN / branch ref). It's also accepted when one side contains
+     the other with at least 8 characters, e.g. `IN4260…` vs `4260…`, or a truncated
+     `0081FIR260178`.
+   - **Amount + date, one unique candidate → Already Booked.**
+   - **Amount + date, but a conflicting reference or several candidates → Check.**
+     The reviewer picks from the alternatives, or creates a new record instead.
+   - **Several vouchers with this line's reference that add up to it → Already
+     Booked.** For example, one bulk NEFT paying several employees, each with their
+     own Payment Entry.
+   - **A unique combination of 2–4 nearby vouchers that adds up exactly → Check.**
+     A coincidental sum is possible, so the reviewer confirms it with "Use these".
+   - Vouchers are assigned greedily, and never to two lines.
+3. **Suggest what's missing** (`bank_statement/suggestion.py`). The first source that
+   hits wins, and the reason is shown on the line.
+   1. A **Bank Narration Rule** for this counterparty and direction.
+   2. **History.** Past reconciled Bank Transactions from the same counterparty, used
+      only when all of them were booked the same way.
+   3. A **unique party** (Supplier/Customer/Employee, or a party Bank Account) whose
+      name starts with the bank's often-truncated counterparty name, e.g.
+      `C LOUNGE BUSINESS CEN` → `C Lounge Business Center LLP`. That needs at least 8
+      characters, and the direction breaks ties.
+   4. An **open Purchase Invoice / Sales Invoice / Expense Claim** whose outstanding
+      amount equals the line exactly. Failing that, an **open Purchase Order / Sales
+      Order** (an advance payment), meaning one that's not fully billed, not Closed /
+      Completed / On Hold, and whose total less advances paid equals the line. The
+      Payment Entry is then built against it. Orders can also be picked by hand in
+      Review ("Settles") and in split rows. On a bulk-file row, a supplier with no
+      matching invoice can be matched to an open Purchase Order. It's booked as an
+      advance JE row (`is_advance`) against the order.
+   5. A **split plan**: a unique set of 2–5 open invoices, posted within 60 days before
+      the bank date, whose outstanding amounts add up exactly to the line. This covers
+      one Amazon card payment for invoices from several sellers, for example.
+   6. **Customer TDS.** A customer receipt often arrives short by the TDS the customer
+      withheld: 2%, 5% or 10% of the invoice's net total (before GST), rounded to the
+      rupee. For example, 10% of ₹29,000 = ₹2,900, so a ₹34,220 invoice is paid as
+      ₹31,320. Where no exact document fits, an unpaid Sales Invoice whose outstanding
+      minus that TDS equals the deposit is suggested. An open Sales Order with no advance
+      yet is checked the same way, for an advance paid net of TDS (the customer's own first, else
+      the only customer with one).
+      - The Payment Entry settles the whole invoice.
+      - It receives the bank amount.
+      - It books the TDS as a deduction, to the account used on past receipts
+        (`TDS - CDS`).
+      - Part-paid invoices are skipped, because TDS is withheld once.
+   7. **Foreign-currency parties.** For example, a USD invoice paid by card in INR. Such a
+      payment can never match on amount, because the bank's INR differs from the invoice
+      amount × rate by the card's markup and fees.
+      - An open invoice in another currency is picked when its supplier or customer is
+        **named in the narration**. For example, `ECOM PUR/OPENAI/…` → OpenAI OpCo, LLC;
+        `ANTHROPIC* CL` → Anthropic, PBC; `APOLLO.IO` → ZenLeads Inc. (dba Apollo.io);
+        `LINODE . AKAM` → Akamai.
+      - Name matching is exact on significant words and truncations, ignoring "Inc",
+        "LLC", "Private" and similar.
+      - The amount is only a sanity check. The implied rate must be within −15%/+20% of
+        the market rate, and the closest invoice wins.
+      - A narration quoting the foreign amount (`… USD 15160.80 …`) is matched on it
+        exactly.
+      - The Payment Entry pays the bank's INR and allocates the invoice's foreign amount.
+        ERPNext books the difference to **Exchange Gain/Loss**, as on past entries.
+      - Each such invoice is offered to only one line per review, the earliest.
+   8. Otherwise, a Journal Entry with only the bank side filled.
+   **Confidence:**
+   - **High:** the party (or Journal Entry account) comes from a rule, from history, or
+     from the narration (its first word matches the party's, e.g. `OVH` → Ovhtech R&d;
+     for `RAZ*Sarvam AI` the merchant after a short gateway prefix is used), plus exactly
+     one document with this outstanding.
+   - **Medium:** one step is inferred: several same-amount documents (the one posted
+     closest to the bank date, on or before it, wins), customer TDS, an exchange rate, a
+     split, or a known party with no document (on account).
+   - **Low:** a guess. With no match, the line still gets the party type implied by the
+     direction and the mode of payment, and the party if it's named in the counterparty
+     segment.
+
+   **Automation:** each review has **Auto-submit High confidence** and **Auto-create
+   drafts for Medium confidence** (both on by default). On upload and on every Re-run:
+   - Medium lines get a Draft entry.
+   - High lines get their entry created and **submitted in the background**, through the
+     same job as Submit Selected.
+   - Low, Check and bulk lines without a file are never touched.
+4. **Review.** Each line has a **Review** dialog where every pre-filled field can be
+   changed. **Create Draft** makes a *Draft* Payment Entry or Journal Entry, which is
+   never submitted. **Open in Form** opens it unsaved instead. There are also options
+   to link an existing voucher by hand, or to ignore the line. **Split this payment**
+   takes a table of party / invoice / amount rows that must add up to the line, and
+   creates **one Draft Payment Entry per party**, each allocated against that party's
+   invoices.
+   **Create Drafts (High confidence)** does the whole batch at once. Every draft
+   created from a line also saves or updates a Bank Narration Rule, so the same
+   counterparty is suggested correctly next time.
+5. **Re-run Reconciliation**, on the same file, as often as needed. Entries created
+   anywhere else become Already Booked. The review also follows its linked documents
+   live (`bank_statement/voucher_sync.py`):
+   - Submitting a draft books its line straight away.
+   - Cancelling or deleting a linked entry puts its line back to Suggested.
+   - Drafts can be opened (**View Draft**) or submitted (**Submit Draft**, after a
+     confirmation) straight from the line or the Documents table, and deleted from the review
+     itself (**Delete Draft(s)** on the line, or
+     **Delete** in the Documents table), or from their own form. The link from the
+     review never blocks the delete.
+6. **Send to Bank Reconciliation** creates the native `Bank Transaction` records, with
+   the extracted reference number and the party. It's safe to run more than once: only
+   unsent lines go. Then reconcile in ERPNext's Bank Reconciliation Tool as usual.
+   **Once anything has been sent, the review can no longer be deleted.** Before that,
+   deleting a review also deletes the drafts it created. Submitted entries are never
+   touched.
+
+**Bulk payments.** A bank-executed bulk upload shows on the statement as one debit,
+e.g. `NEFT/260002358458/6/AW0005273593////` (batch reference / number of
+beneficiaries). By default such lines are not guessed at: no rule, history, name or amount/date
+matching applies to them, and nothing is learned from them. They are only linked
+automatically to an existing entry that carries the bank's exact batch reference.
+Otherwise they get an **Upload Bulk File** button. **Review** still lets you book one by
+hand, e.g. a single invoice payment that was sent through bulk upload. That manual
+choice is kept on re-run. Upload the bank's
+bulk-payment file for that debit, e.g. the `.xlsx` the **Bulk Payment CSV** page
+generated; `.xls`/`.csv` work too (`bank_statement/bulk_upload.py`). The file must add
+up to the line and debit this statement's account.
+
+Each row is then resolved (`bank_statement/bulk_matching.py`):
+- **Party:** the beneficiary account number is matched against the Employee/Supplier
+  **Bank Accounts** (spaces and Excel's scientific notation ignored).
+- **Documents:** the open documents that make up the row amount exactly.
+  - Employee: a Salary Slip with that net pay in an unpaid Payroll Entry, or the
+    employee's unpaid Expense Claims (all of them, or a unique combination).
+  - Supplier: open Purchase Invoices.
+- **Cut-off:** only documents posted on or before the file's own **Transaction Date**
+  are considered; later ones can't be what the file paid. If no exact set of documents
+  fits, the documents are **allocated oldest first**, the last one partly if needed,
+  and anything they don't cover goes on-account. That can happen when a claim was
+  cancelled after the file was prepared. The row's note says how much went on-account.
+- **Row status:**
+  - **Matched**: the documents add up exactly.
+  - **On-account**: party known but no exact documents. Allowed; it's booked as an
+    advance.
+  - **Unresolved**: no party.
+  - **Mismatch**: reviewer-chosen documents don't add up.
+  - Unresolved and Mismatch rows must be fixed in the bulk dialog (party, kind, or
+    documents) before creating.
+
+**Create Draft Journal Entry** then builds one Bank Entry, the way these batches were
+booked by hand:
+- the bank credit
+- one debit per Expense Claim on its payable account (party Employee, reference Expense
+  Claim)
+- one debit per Purchase Invoice on its `credit_to` (reference Purchase Invoice)
+- `Payroll Payable` per Payroll Entry for salary
+- the party's payable for on-account rows
+
+**Documents table.** Below the lines, every document linked to or created from the
+review is listed with its line, type, **Cheque/Reference No**, party, date, amount,
+live status and the invoices it settles. The reference can be edited in place (✎) while
+the document is a draft. The table opens on **Drafts (not submitted)**; the other
+filters are Created, Matched and All. ERPNext doesn't allow it once submitted; that needs cancel and
+amend. From there it can be opened, or deleted if it's a draft. Drafts
+also have checkboxes, with select-all and a running selected total. **Submit Selected**
+queues them for submission in a background job (long queue, one job per review at a
+time). Each document is submitted separately, so one failure doesn't stop the rest.
+Progress shows live; when the job finishes the page reloads, listing any failures with
+ERPNext's reason. One bank
+line can be booked by several documents. They all live in the `vouchers` child table
+(`Bank Statement Review Voucher`).
+
+**Advances.** Payments made before the invoice exists (against a proforma, or prepaid
+usage like Google Cloud):
+- **Automatic:** a line whose party is known but has no open invoice is suggested as an
+  **Advance**, so it's auto-drafted as one.
+- **By hand:** use **Advance** on a line, or tick several lines and use **Mark selected
+  as Advance**. The dialog asks for:
+  - the party (each line keeps its detected party in bulk)
+  - an optional open Purchase or Sales Order
+  - an optional proforma number or reference
+  - "Always treat payments to this payee as advances", which saves a Bank Narration Rule
+    with *Treat as Advance*, so later payments to them are suggested as advances at High
+    confidence
+- **The entry:** a Payment Entry with no invoice (ERPNext's unallocated amount is the
+  advance), or against the chosen order. Employees go to the company's Employee Advance
+  account. Remarks read "Advance to <party> - <reference>". Marking a line that already
+  has an unsubmitted draft replaces the draft.
+- **Where to see them:** advance lines carry an **Advance** badge, and the Documents
+  table has an **Advances** filter.
+- **Adjustment:** Purchase Invoices created by Purchase Invoice Automation now tick ERPNext's
+  **Set Advances and Allocate (FIFO)**, so the supplier's open advances are pulled into
+  the draft invoice automatically. For other invoices, use ERPNext's Payment
+  Reconciliation tool.
+
+**Overlapping uploads.** Say a daily file is followed later by the monthly one. Any
+line already on another review for the same bank account, or already present as a Bank
+Transaction, is marked **Already Imported**, linked to where it already is, and never
+sent twice.
+
+**Bank Narration Rules** can also be seeded in bulk. **Learn from History** on the
+`Bank Narration Rule` list proposes one rule per counterparty that was always booked
+the same way.
+
+Only Axis Bank's statement export is parsed today (`bank_statement/parsers/axis.py`).
+Another bank means adding a parser module with `detect`/`parse`, and registering it in
+`bank_statement/parsers/__init__.py`.
 
 ### Running the tests
 

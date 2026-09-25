@@ -44,7 +44,11 @@ app_license = "mit"
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
-doctype_list_js = {"Purchase Expense Center": "public/js/purchase_expense_center_list.js"}
+doctype_list_js = {
+	"Purchase Expense Center": "public/js/purchase_expense_center_list.js",
+	"Bank Statement Review": "public/js/bank_statement_review_list.js",
+	"Bank Narration Rule": "public/js/bank_narration_rule_list.js",
+}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
@@ -139,9 +143,20 @@ doctype_list_js = {"Purchase Expense Center": "public/js/purchase_expense_center
 
 doc_events = {
 	"Purchase Invoice": {
+		"after_insert": "alfaedge_finance.alfaedge_finance.purchase_invoice_automation.invoice_creation.sync_invoice_status",
 		"on_submit": "alfaedge_finance.alfaedge_finance.purchase_invoice_automation.invoice_creation.sync_invoice_status",
 		"on_cancel": "alfaedge_finance.alfaedge_finance.purchase_invoice_automation.invoice_creation.sync_invoice_status",
 		"on_trash": "alfaedge_finance.alfaedge_finance.purchase_invoice_automation.invoice_creation.unlink_from_expense_center",
+	},
+	"Payment Entry": {
+		"on_submit": "alfaedge_finance.alfaedge_finance.bank_statement.voucher_sync.on_voucher_status_change",
+		"on_cancel": "alfaedge_finance.alfaedge_finance.bank_statement.voucher_sync.on_voucher_status_change",
+		"on_trash": "alfaedge_finance.alfaedge_finance.bank_statement.voucher_sync.on_voucher_trash",
+	},
+	"Journal Entry": {
+		"on_submit": "alfaedge_finance.alfaedge_finance.bank_statement.voucher_sync.on_voucher_status_change",
+		"on_cancel": "alfaedge_finance.alfaedge_finance.bank_statement.voucher_sync.on_voucher_status_change",
+		"on_trash": "alfaedge_finance.alfaedge_finance.bank_statement.voucher_sync.on_voucher_trash",
 	},
 }
 
@@ -200,7 +215,9 @@ doc_events = {
 # longer be blocked on that account either - an acceptable trade-off since master data
 # like that is meant to be disabled, not deleted (Frappe nudges towards that itself).
 
-ignore_links_on_delete = ["Purchase Expense Center"]
+# A draft/voucher linked from a Bank Statement Review can still be deleted; the review's
+# own on_trash sync (bank_statement.voucher_sync) then unlinks it.
+ignore_links_on_delete = ["Purchase Expense Center", "Bank Statement Review Voucher"]
 
 # Request Events
 # ----------------
@@ -273,4 +290,3 @@ fixtures = [
 		],
 	},
 ]
-
